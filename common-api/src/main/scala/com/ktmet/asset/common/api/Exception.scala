@@ -10,5 +10,6 @@ object Exception {
   class FormBadRequestException extends ClientException(400, "FormBadRequestException", "Check your form request")
   class IllegalBodyException extends ClientException(400, "IllegalBodyException", "Check your http body")
 
-  class NotFoundException extends ClientException(404, "NotFoundResourceException", "Not Found Resource")
+  class NotFoundResourceException extends ClientException(404, "NotFoundResourceException", "Not Found Resource")
+  class NotFoundException extends ClientException(404, "NotFoundException", "Not Found")
 }

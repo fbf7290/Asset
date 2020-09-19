@@ -35,7 +35,7 @@ abstract class AssetApplication(context: LagomApplicationContext)
   implicit lazy val timeout:Timeout = Timeout(5.seconds)
 
   override lazy val jsonSerializerRegistry = new JsonSerializerRegistry {
-    override def serializers  = immutable.Seq.empty[JsonSerializer[_]]
+    override def serializers  = UserEntity.serializers
   }
   clusterSharding.init(
     Entity(UserEntity.typeKey) { entityContext =>

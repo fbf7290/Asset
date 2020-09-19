@@ -11,6 +11,7 @@ scalaVersion := "2.13.3"
 val macwire = "com.softwaremill.macwire" %% "macros" % "2.3.7" % "provided"
 val scalaUuid = "io.jvm.uuid" %% "scala-uuid" % "0.3.1"
 val jwt ="com.pauldijou" %% "jwt-core" % "4.3.0"
+val jwtJson = "com.pauldijou" %% "jwt-play-json" % "4.3.0"
 
 
 val akkaDiscoveryKubernetesApi = "com.lightbend.akka.discovery" %% "akka-discovery-kubernetes-api" % "1.0.8"
@@ -48,6 +49,8 @@ lazy val assetImpl = (project in file("asset-impl"))
       lagomScaladslPersistenceCassandra,
       lagomScaladslPubSub,
       lagomScaladslTestKit,
+      jwt,
+      jwtJson,
       macwire,
       scalaUuid,
       lagomScaladslAkkaDiscovery,

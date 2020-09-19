@@ -7,4 +7,14 @@ object AssetSettings {
     case None => "secretKey"
   }
 
+  val accessTokenExpiredSecond  = sys.env.get("ACCESS_TOKEN_EXPIRED_SECOND") match {
+    case Some(access_token_expired_second) => access_token_expired_second.toLong
+    case None => 1800   // 30분
+  }
+
+  val kakao = sys.env.get("NAVI_KAKAO") match {
+    case Some(navi_kakao) => navi_kakao
+    case None => "https://kapi.kakao.com"
+  }
+
 }
