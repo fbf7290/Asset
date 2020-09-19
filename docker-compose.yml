@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  db:
+    image: cassandra
+    volumes:
+      - ./cassandra/:/var/lib/cassandra
+    ports:
+      - "7000:7000"
+      - "7001:7001"
+      - "7199:7199"
+      - "9042:9042"
+
+  app:
+    image: xjfflsl/asset:0.1.0
+    environment:
+      - CASSANDRA_CONTACT_POINT.0=172.17.0.1
+    ports:
+      - "10000:10000"
