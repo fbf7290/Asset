@@ -1,0 +1,13 @@
+# Project exclude paths
+/asset-api/target/
+/asset-api/target/scala-2.12/classes/
+/asset-impl/target/
+/asset-impl/target/scala-2.12/classes/
+/common-api/target/
+/common-api/target/scala-2.12/classes/
+/project/project/target/
+/project/target/
+/target/
+/target/lagom-dynamic-projects/lagom-internal-meta-project-cassandra/target/
+/target/lagom-dynamic-projects/lagom-internal-meta-project-kafka/target/
+/target/lagom-dynamic-projects/lagom-internal-meta-project-service-locator/target/
