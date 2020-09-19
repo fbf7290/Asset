@@ -44,7 +44,6 @@ lazy val assetApi = (project in file("asset-api"))
 lazy val assetImpl = (project in file("asset-impl"))
   .enablePlugins(LagomScala)
   .settings(
-    name := "asset",
     libraryDependencies ++= Seq(
       lagomScaladslPersistenceCassandra,
       lagomScaladslPubSub,
