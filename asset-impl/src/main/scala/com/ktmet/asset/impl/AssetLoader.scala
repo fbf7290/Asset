@@ -3,6 +3,7 @@ package com.ktmet.asset.impl
 
 import akka.cluster.sharding.typed.scaladsl.Entity
 import akka.util.Timeout
+import com.asset.collector.api.CollectorService
 import com.ktmet.asset.api.AssetService
 import com.ktmet.asset.impl.entity.UserEntity
 import com.lightbend.lagom.scaladsl.akka.discovery.AkkaDiscoveryComponents
@@ -12,8 +13,8 @@ import com.lightbend.lagom.scaladsl.playjson.{JsonSerializer, JsonSerializerRegi
 import com.lightbend.lagom.scaladsl.server.{LagomApplication, LagomApplicationContext, LagomApplicationLoader}
 import play.api.libs.ws.ahc.AhcWSComponents
 import com.softwaremill.macwire._
-import scala.concurrent.duration._
 
+import scala.concurrent.duration._
 import scala.collection.immutable
 
 class AssetLoader extends LagomApplicationLoader {
@@ -31,6 +32,8 @@ abstract class AssetApplication(context: LagomApplicationContext)
     with CassandraPersistenceComponents
     with AhcWSComponents {
 
+
+  implicit lazy val collectorService = serviceClient.implement[CollectorService]
   override lazy val lagomServer = serverFor[AssetService](wire[AssetServiceImpl])
   implicit lazy val timeout:Timeout = Timeout(5.seconds)
 
@@ -42,4 +45,7 @@ abstract class AssetApplication(context: LagomApplicationContext)
       UserEntity(entityContext)
     }
   )
+
+
+
 }

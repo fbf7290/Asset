@@ -22,7 +22,7 @@ val cats = "org.typelevel" %% "cats-core" % "2.1.1"
 val akkaDiscoveryKubernetesApi = "com.lightbend.akka.discovery" %% "akka-discovery-kubernetes-api" % "1.0.8"
 val lagomScaladslAkkaDiscovery = "com.lightbend.lagom" %% "lagom-scaladsl-akka-discovery-service-locator" % LagomVersion.current
 
-ThisBuild / scalacOptions ++= List("-encoding", "utf8", "-deprecation", "-feature", "-unchecked", "-Xfatal-warnings")
+ThisBuild / scalacOptions ++= List("-encoding", "utf8", "-deprecation", "-feature", "-unchecked", "-Xfatal-warnings", "-language:higherKinds", "-Ypartial-unification")
 
 
 def dockerSettings = Seq(
@@ -68,7 +68,7 @@ lazy val assetApi = (project in file("asset-api"))
     libraryDependencies ++= Seq(
       lagomScaladslApi
     )
-  ).dependsOn(commonApi)
+  ).dependsOn(commonApi, collectorApi)
 
 
 

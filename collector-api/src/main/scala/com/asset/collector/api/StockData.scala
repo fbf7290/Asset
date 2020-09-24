@@ -100,13 +100,3 @@ case class Price(code:String, date:String, close:String, open:String, high:Strin
 object Price {
   implicit val format :Format[Price]= Json.format
 }
-
-case class NaverStockIndex09(code:String, category:String, yIndex201712:String
-                             , yIndex201812:String, yIndex201912:String, yIndex202012E:String
-                             , qIndex201906:String, qIndex201909:String, qIndex201912:String
-                             , qIndex202003:String, qIndex202006:String, qIndex202009E:String)
-object NaverStockIndex09 {
-  implicit val format :Format[NaverStockIndex09]= Json.format
-  def apply(code:String, category:String, indexes:String*):NaverStockIndex09 =
-    NaverStockIndex09(code, category, indexes(0), indexes(1), indexes(2), indexes(3), indexes(4), indexes(5), indexes(6), indexes(7), indexes(8), indexes(9))
-}

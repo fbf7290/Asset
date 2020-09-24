@@ -17,7 +17,6 @@ import scala.collection.mutable.ListBuffer
 import scala.concurrent.{ExecutionContext, Future}
 
 object External {
-//TODO price의 int를 float로 바꾼다.
   def requestKoreaEtfStockList(implicit wsClient: WSClient, ec: ExecutionContext):Future[Seq[Stock]] = {
     var stockList = ListBuffer.empty[Stock]
     wsClient.url("https://finance.naver.com/api/sise/etfItemList.nhn").get().map{
