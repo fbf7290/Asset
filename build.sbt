@@ -12,6 +12,11 @@ val macwire = "com.softwaremill.macwire" %% "macros" % "2.3.7" % "provided"
 val scalaUuid = "io.jvm.uuid" %% "scala-uuid" % "0.3.1"
 val jwt ="com.pauldijou" %% "jwt-core" % "4.3.0"
 val jwtJson = "com.pauldijou" %% "jwt-play-json" % "4.3.0"
+val radixTree = "com.rklaehn" %% "radixtree" % "0.5.1"
+
+val jsoup = "org.jsoup" % "jsoup" % "1.8.2"
+val yahooFinance = "com.yahoofinance-api" % "YahooFinanceAPI" % "3.15.0"
+val cats = "org.typelevel" %% "cats-core" % "2.1.1"
 
 
 val akkaDiscoveryKubernetesApi = "com.lightbend.akka.discovery" %% "akka-discovery-kubernetes-api" % "1.0.8"
@@ -33,6 +38,31 @@ lazy val commonApi = (project in file("common-api"))
   )
 
 
+lazy val collectorApi = (project in file("collector-api"))
+  .settings(
+    libraryDependencies ++= Seq(
+      lagomScaladslApi
+    )
+  )
+
+
+
+lazy val collectorImpl = (project in file("collector-impl"))
+  .enablePlugins(LagomScala)
+  .settings(
+    name := "collector",
+    libraryDependencies ++= Seq(
+      macwire,
+      yahooFinance,
+      jsoup,
+      cats,
+      lagomScaladslAkkaDiscovery,
+      akkaDiscoveryKubernetesApi,
+      lagomScaladslPersistenceCassandra
+    )
+  ).settings(dockerSettings)
+  .dependsOn(collectorApi)
+
 lazy val assetApi = (project in file("asset-api"))
   .settings(
     libraryDependencies ++= Seq(
@@ -53,11 +83,12 @@ lazy val assetImpl = (project in file("asset-impl"))
       jwtJson,
       macwire,
       scalaUuid,
+      radixTree,
       lagomScaladslAkkaDiscovery,
       akkaDiscoveryKubernetesApi
     )
   ).settings(dockerSettings)
-  .dependsOn(commonApi, assetApi)
+  .dependsOn(commonApi, assetApi, collectorApi, collectorImpl)
 
 
 lagomCassandraEnabled in ThisBuild := false
