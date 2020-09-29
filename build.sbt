@@ -40,6 +40,7 @@ lazy val commonApi = (project in file("common-api"))
 
 lazy val collectorApi = (project in file("collector-api"))
   .settings(
+    name := "collectApi",
     libraryDependencies ++= Seq(
       lagomScaladslApi
     )

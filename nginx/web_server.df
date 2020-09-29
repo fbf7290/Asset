@@ -1,0 +1,2 @@
+FROM openresty:1.15.8.1
+COPY ["./nginx.conf", "/usr/local/openresty/nginx/conf/nginx.conf"]

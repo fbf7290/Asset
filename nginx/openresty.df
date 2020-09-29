@@ -1,0 +1,7 @@
+FROM openresty/openresty:centos
+MAINTAINER kim "wonryool@kt.com"
+RUN yum install -y gcc
+RUN luarocks install lua-cjson
+RUN luarocks install lua-resty-mlcache
+RUN luarocks install lua-resty-worker-events
+RUN luarocks install lua-resty-http

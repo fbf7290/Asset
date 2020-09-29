@@ -17,3 +17,9 @@ services:
       - CASSANDRA_CONTACT_POINT.0=172.17.0.1
     ports:
       - "10000:10000"
+  web:
+    image: xjfflsl/asset_web:0.0.1
+    environment:
+      - HOSTNAME=127.0.0.1
+    ports:
+      - "80:80"
