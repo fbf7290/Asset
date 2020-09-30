@@ -7,6 +7,11 @@ object AssetSettings {
     case None => "secretKey"
   }
 
+  val accessTokenSize = sys.env.get("ACCESS_TOKEN_SIZE") match {
+    case Some(access_token_size) => access_token_size.toInt
+    case None => 5   // 동시 접속 5
+  }
+
   val accessTokenExpiredSecond  = sys.env.get("ACCESS_TOKEN_EXPIRED_SECOND") match {
     case Some(access_token_expired_second) => access_token_expired_second.toLong
     case None => 1800   // 30분

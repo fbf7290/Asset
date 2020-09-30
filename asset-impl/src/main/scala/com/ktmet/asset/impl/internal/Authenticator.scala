@@ -46,14 +46,10 @@ trait Authenticator {
 
   def funcIfTokenMatch[Result](userId:String, token:String, func: =>Future[Result]) =
     clusterSharding.entityRefFor(UserEntity.typeKey, userId)
-      .ask[UserEntity.Response](reply => UserEntity.GetToken(reply))
+      .ask[UserEntity.Response](reply => UserEntity.ContainToken(token, reply))
       .flatMap {
-        case UserEntity.TokenResponse(accessToken) =>
-          accessToken.fold(throw new AuthorizationException("AuthorizationError", "User does not exist accessToken or User does not exist or logout")) {
-            case persistToken if persistToken == token =>
-              func
-            case _ => throw new AuthorizationException("AuthorizationError", "Wrong Token")
-          }
+        case UserEntity.Yes => func
+        case UserEntity.No => throw new AuthorizationException("AuthorizationError", "User does not exist accessToken or User does not exist or logout")
         case UserEntity.NoUserException => throw UserEntity.NoUserException
         case _ => throw new InternalServerError
       }

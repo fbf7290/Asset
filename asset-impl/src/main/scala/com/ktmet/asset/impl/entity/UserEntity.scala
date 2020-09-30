@@ -20,9 +20,9 @@ object UserEntity {
   trait CommandSerializable
   sealed trait Command extends CommandSerializable
   case class LogIn(userId:UserId, replyTo:ActorRef[TokenResponse]) extends Command
-  case class LogOut(replyTo:ActorRef[Response]) extends Command
+  case class LogOut(accessToken:String, replyTo:ActorRef[Response]) extends Command
   case class DeleteUser(replyTo:ActorRef[Response]) extends Command
-  case class GetToken(replyTo:ActorRef[Response]) extends Command
+  case class ContainToken(accessToken:String, replyTo:ActorRef[Response]) extends Command
   case class RefreshToken(accessToken:String, replyTo:ActorRef[Response]) extends Command
   case class GetUser(replyTo:ActorRef[Response]) extends Command
 
@@ -54,7 +54,7 @@ object UserEntity {
   object LoggedIn{
     implicit val format:Format[LoggedIn] = Json.format
   }
-  case class LoggedOut(userId:UserId) extends Event
+  case class LoggedOut(userId:UserId, accessToken:String) extends Event
   object LoggedOut{
     implicit val format:Format[LoggedOut] = Json.format
   }
@@ -62,13 +62,10 @@ object UserEntity {
   object UserDeleted{
     implicit val format:Format[UserDeleted] = Json.format
   }
-  case class TokenRefreshed(accessToken:String) extends Event
+  case class TokenRefreshed(lastAccessToken:String, newAccessToken:String) extends Event
   object TokenRefreshed{
     implicit val format:Format[TokenRefreshed] = Json.format
   }
-
-
-
 
   val empty:UserEntity = UserEntity(None)
   val typeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("User")
@@ -122,9 +119,9 @@ final case class UserEntity(userState:Option[UserState]) {
 
   def applyCommand(cmd: Command): ReplyEffect[Event, UserEntity] = cmd match {
     case LogIn(userId, replyTo) => onLogIn(userId, replyTo)
-    case LogOut(replyTo) => onLogOut(replyTo)
+    case LogOut(accessToken, replyTo) => onLogOut(accessToken, replyTo)
     case DeleteUser(replyTo) => onDeleteUser(replyTo)
-    case GetToken(replyTo) => onGetToken(replyTo)
+    case ContainToken(accessToken, replyTo) => onContainToken(accessToken, replyTo)
     case RefreshToken(accessToken, replyTo) => onRefreshToken(accessToken, replyTo)
     case GetUser(replyTo) => onGetUser(replyTo)
   }
@@ -138,48 +135,48 @@ final case class UserEntity(userState:Option[UserState]) {
       Effect.persist(UserCreated(userId, token)).thenReply(replyTo)(_=>TokenResponse(Some(token)))
     }
   }
-  private def onLogOut(replyTo:ActorRef[Response]): ReplyEffect[Event, UserEntity] =
+  private def onLogOut(accessToken:String, replyTo:ActorRef[Response]): ReplyEffect[Event, UserEntity] =
     funcWithUser(replyTo)( state =>
-      Effect.persist(LoggedOut(state.userId)).thenReply(replyTo)(_=>Yes)
+      Effect.persist(LoggedOut(state.userId, accessToken)).thenReply(replyTo)(_=>Yes)
     )
   private def onDeleteUser(replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
     funcWithUser(replyTo)( state =>
       Effect.persist(UserDeleted(state.userId)).thenReply(replyTo)(_=>Yes)
     )
-  private def onGetToken(replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
+  private def onContainToken(accessToken: String, replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
     funcWithUser(replyTo)( state =>
-      Effect.reply(replyTo)(TokenResponse(state.accessToken))
+      state.containToken(accessToken) match {
+        case true => Effect.reply(replyTo)(Yes)
+        case false => Effect.reply(replyTo)(No)
+      }
     )
   private def onRefreshToken(accessToken: String, replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
     funcWithUser(replyTo){ state =>
-      state.accessToken match {
-        case Some(token) if accessToken == token =>
-          val newToken = createAccessToken(state.userId)
-          Effect.persist(TokenRefreshed(newToken)).thenReply(replyTo)(_=>TokenResponse(Some(newToken)))
-        case _ => Effect.reply(replyTo)(TokenException)
+      state.containToken(accessToken) match {
+        case true =>
+          val newAccessToken = createAccessToken(state.userId)
+          Effect.persist(TokenRefreshed(accessToken, newAccessToken)).thenReply(replyTo)(_=>TokenResponse(Some(newAccessToken)))
+        case false => Effect.reply(replyTo)(TokenException)
       }
     }
   private def onGetUser(replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
-    funcWithUser(replyTo)( state =>
+    funcWithUser(replyTo){state =>
+      println(state.accessTokens.size)
       Effect.reply(replyTo)(UserResponse(state))
-    )
-
-
+    }
 
   def applyEvent(evt: Event): UserEntity = evt match {
     case UserCreated(userId, accessToken) => onUserCreated(userId, accessToken)
     case LoggedIn(_, accessToken) => onLoggedIn(accessToken)
-    case LoggedOut(_) => onLoggedOut
+    case LoggedOut(_, accessToken) => onLoggedOut(accessToken)
     case UserDeleted(_) => onUserDeleted
-    case TokenRefreshed(accessToken) => onTokenRefreshed(accessToken)
+    case TokenRefreshed(lastAccessToken, newAccessToken) => onTokenRefreshed(lastAccessToken, newAccessToken)
   }
 
-
-  private def onUserCreated(userId: UserId, accessToken: String): UserEntity = copy(userState = Some(UserState(userId, Some(accessToken))))
+  private def onUserCreated(userId: UserId, accessToken: String): UserEntity = copy(userState = Some(UserState(userId, List(accessToken))))
   private def onLoggedIn(accessToken: String): UserEntity = copy(userState.map(_.loggedIn(accessToken)))
-  private def onLoggedOut: UserEntity = copy(userState.map(_.loggedOut))
+  private def onLoggedOut(accessToken: String): UserEntity = copy(userState.map(_.loggedOut(accessToken)))
   private def onUserDeleted: UserEntity = copy(None)
-  private def onTokenRefreshed(accessToken: String): UserEntity = copy(userState.map(_.loggedIn(accessToken)))
-
-
+  private def onTokenRefreshed(lastAccessToken:String, newAccessToken: String): UserEntity =
+    copy(userState.map(_.loggedOut(lastAccessToken).loggedIn(newAccessToken)))
 }

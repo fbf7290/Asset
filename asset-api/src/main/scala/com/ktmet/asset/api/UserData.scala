@@ -32,11 +32,12 @@ object UserId{
   def empty:UserId = UserId("","")
 }
 
-case class UserState(userId:UserId, accessToken:Option[String]){
-  def loggedIn(accessToken:String) = copy(accessToken = Some(accessToken))
-  def loggedOut = copy(accessToken=None)
+case class UserState(userId:UserId, accessTokens:List[String]){
+  def loggedIn(accessToken:String) = copy(accessTokens = accessToken::accessTokens take AssetSettings.accessTokenSize)
+  def loggedOut(accessToken:String) = copy(accessTokens = accessTokens.filterNot(_==accessToken))
+  def containToken(accessToken:String):Boolean = accessTokens.contains(accessToken)
 }
 object UserState{
   implicit val format:Format[UserState] = Json.format
-  def empty:UserState = UserState(UserId.empty, None)
+  def empty:UserState = UserState(UserId.empty, List.empty)
 }

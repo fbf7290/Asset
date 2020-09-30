@@ -58,9 +58,9 @@ trait UserServiceImplPart extends ImplBase with Authenticator {
     }
 
   override def logout: ServiceCall[NotUsed, Done] = authenticate{ userId =>
-    ServerServiceCall{ (_,_) =>
+    ServerServiceCall{ (requestHeader ,_) =>
       userEntityRef(userId)
-        .ask[UserEntity.Response](reply => UserEntity.LogOut(reply))
+        .ask[UserEntity.Response](reply => UserEntity.LogOut(extractJwtToken(requestHeader).get, reply))
         .collect{
           case UserEntity.Yes => (ResponseHeader.Ok.withStatus(204), Done)
           case UserEntity.NoUserException => throw UserEntity.NoUserException
