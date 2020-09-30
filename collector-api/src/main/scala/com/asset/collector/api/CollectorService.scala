@@ -14,6 +14,9 @@ trait CollectorService extends Service{
   def getUsaStockList: ServiceCall[NotUsed, Seq[Stock]]
 
 
+  def insertKoreaStockPrice(code:String): ServiceCall[NotUsed, Done]
+  def insertUsaStockPrice(code:String): ServiceCall[NotUsed, Done]
+
   def requestBatchKoreaStock: ServiceCall[NotUsed, Done]
   def requestBatchUsaStock: ServiceCall[NotUsed, Done]
 
@@ -30,6 +33,9 @@ trait CollectorService extends Service{
 
         restCall(Method.POST, "/stock/korea/batch", requestBatchKoreaStock),
         restCall(Method.POST, "/stock/usa/batch", requestBatchUsaStock),
+
+        restCall(Method.POST, "/stock/korea/insert/price/:code", insertKoreaStockPrice _),
+        restCall(Method.POST, "/stock/usa/insert/price/:code", insertUsaStockPrice _),
       ).withAutoAcl(true)
       .withExceptionSerializer(new ClientExceptionSerializer(Environment.simple()))
 

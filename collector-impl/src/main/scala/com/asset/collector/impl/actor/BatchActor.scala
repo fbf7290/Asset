@@ -6,9 +6,9 @@ import java.time.{ZoneId, ZonedDateTime}
 import akka.Done
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import akka.actor.typed.scaladsl.Behaviors
-import akka.stream.Materializer
+import akka.stream.{Materializer, OverflowStrategy}
 import akka.stream.scaladsl.{Sink, Source}
-import com.asset.collector.api.{CollectorSettings, Country, Market, Stock}
+import com.asset.collector.api.{CollectorSettings, Country, Market, Price, Stock}
 import com.asset.collector.impl.repo.stock.{StockRepoAccessor, StockRepoTrait}
 import play.api.libs.ws.WSClient
 
@@ -29,12 +29,17 @@ import cats.instances.list._
 
 object BatchActor {
   sealed trait Command
-  case class CollectKoreaStock(replyTo:Option[ActorRef[Reply.type]]) extends Command
-  case class CollectUsaStock(replyTo:Option[ActorRef[Reply.type]]) extends Command
+
+  case class CollectKoreaStock(code:String, replyTo:ActorRef[Response]) extends Command
+  case class CollectUsaStock(code:String, replyTo:ActorRef[Response]) extends Command
+  case class CollectKoreaStocks(replyTo:Option[ActorRef[Reply.type]]) extends Command
+  case class CollectUsaStocks(replyTo:Option[ActorRef[Reply.type]]) extends Command
   case class SuccessStockListBatch(country: Country) extends Command
 
   sealed trait Response
   case object Reply extends Response
+  case object Complete extends Response
+  case class NotComplete(exception:Throwable) extends Response
 
   def apply(stockDb:StockRepoTrait[Future])
            (implicit wsClient: WSClient, ec: ExecutionContext, materializer: Materializer):Behavior[Command] = Behaviors.setup{ context =>
@@ -57,12 +62,29 @@ object BatchActor {
             } yield {}
 
 
-          setDailyTimer(CollectKoreaStock(None), 0)
-          setDailyTimer(CollectUsaStock(None), 8)
+          setDailyTimer(CollectKoreaStocks(None), 0)
+          setDailyTimer(CollectUsaStocks(None), 8)
 
 
           def ing:Behavior[Command] = Behaviors.receiveMessage {
-            case CollectKoreaStock(replyTo) =>
+            case CollectKoreaStock(code, replyTo) =>
+              External.requestKoreaStockPrice(code)
+                .flatMap{ prices =>
+                  StockRepoAccessor.insertBatchPrice[Future](Country.KOREA, prices).run(stockDb)
+                }.recover{case e => replyTo ! NotComplete(e)}
+                .foreach(_ => replyTo ! Complete)
+
+              Behaviors.same
+
+            case CollectUsaStock(code, replyTo) =>
+              External.requestUsaStockPrice(code).flatMap{ prices =>
+                StockRepoAccessor.insertBatchPrice[Future](Country.USA, prices).run(stockDb)
+              }.recover{case e => replyTo ! NotComplete(e)}
+                .foreach(_ => replyTo ! Complete)
+
+              Behaviors.same
+
+            case CollectKoreaStocks(replyTo) =>
               replyTo.map(_.tell(Reply))
               context.pipeToSelf {
                 for{
@@ -73,12 +95,17 @@ object BatchActor {
                   _ <- refreshStockList(Country.KOREA, nowStocks).run(stockDb)
                 } yield {
                   val failList = ListBuffer.empty[String]
-                  Source(nowStocks).mapAsync(1){stock =>
-                    println(stock)
-                    External.requestKoreaStockPrice(stock.code)
-                      .flatMap{ prices =>
-                      StockRepoAccessor.insertBatchPrice[Future](Country.KOREA, prices).run(stockDb)
-                    }.recover{case _ => failList += stock.code}
+                  Source(nowStocks).zipWithIndex.mapAsync(8) { case (stock, index) =>
+                    println(s"${index} ${stock}")
+                    External.requestKoreaStockPrice(stock.code).map(prices=>(index, prices)).recover{case _ =>
+                      failList += stock.code
+                      (index, Seq.empty[Price])
+                    }
+                  }.buffer(24, OverflowStrategy.backpressure).mapAsync(2){ case (index, prices) =>
+                    println(s"${index} db")
+                    StockRepoAccessor.insertBatchPrice[Future](Country.KOREA, prices).run(stockDb).recover{case _ =>
+                      prices.headOption.foreach(price => failList += price.code)
+                    }
                   }.runWith(Sink.ignore).onComplete{
                     case Success(_) => Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("한국 batch 성공", failList.toString, JsNull))
                     case Failure(exception) => Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("한국 batch 실패", exception.getMessage, JsNull))
@@ -89,22 +116,29 @@ object BatchActor {
                 case Failure(exception) => throw exception
               }
               stash
-            case CollectUsaStock(replyTo) =>
+            case CollectUsaStocks(replyTo) =>
               replyTo.map(_.tell(Reply))
               context.pipeToSelf {
                 for{
                   nowStocksList <- Future.sequence(Set(External.requestUsaMarketStockList(Market.NASDAQ),
                     External.requestUsaMarketStockList(Market.NYSE),
-                    External.requestUsaMarketStockList(Market.AMEX)))
+                    External.requestUsaMarketStockList(Market.AMEX),
+                    External.requestUsaEtfStockList))
                   nowStocks = nowStocksList.foldLeft(Set.empty[Stock])((r, stocks) => r ++ stocks)
                   _ <- refreshStockList(Country.USA, nowStocks).run(stockDb)
                 } yield {
                   val failList = ListBuffer.empty[String]
-                  Source(nowStocks).mapAsync(1){stock =>
-                    println(stock)
-                    External.requestUsaStockPrice(stock.code).flatMap{ prices =>
-                      StockRepoAccessor.insertBatchPrice[Future](Country.USA, prices).run(stockDb)
-                    }.recover{case _ => failList += stock.code}
+                  Source(nowStocks).zipWithIndex.mapAsync(8) { case (stock, index) =>
+                    println(s"${index} ${stock}")
+                    External.requestUsaStockPrice(stock.code).map(prices=>(index, prices)).recover{case _ =>
+                      failList += stock.code
+                      (index, Seq.empty[Price])
+                    }
+                  }.buffer(24, OverflowStrategy.backpressure).mapAsync(2){ case (index, prices) =>
+                    println(s"${index} db")
+                    StockRepoAccessor.insertBatchPrice[Future](Country.USA, prices).run(stockDb).recover{case _ =>
+                      prices.headOption.foreach(price => failList += price.code)
+                    }
                   }.runWith(Sink.ignore).onComplete{
                     case Success(_) => Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("미국 batch 성공", failList.toString, JsNull))
                     case Failure(exception) =>
@@ -124,8 +158,8 @@ object BatchActor {
           def stash:Behavior[Command] = Behaviors.receiveMessage {
             case SuccessStockListBatch(country) =>
               country match {
-                case Country.KOREA => setDailyTimer(CollectKoreaStock(None), 0)
-                case Country.USA => setDailyTimer(CollectUsaStock(None), 8)
+                case Country.KOREA => setDailyTimer(CollectKoreaStocks(None), 0)
+                case Country.USA => setDailyTimer(CollectUsaStocks(None), 8)
               }
               buffer.unstashAll(ing)
             case other =>

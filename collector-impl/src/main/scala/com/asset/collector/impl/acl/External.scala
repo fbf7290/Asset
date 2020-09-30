@@ -5,7 +5,7 @@ import java.util.Calendar
 
 import com.asset.collector.api.Exception.ExternalResourceException
 import com.asset.collector.api.Market.Market
-import com.asset.collector.api.{DumbStock, Market, NaverEtfListResponse, Price, Stock}
+import com.asset.collector.api.{DumbStock, FinnHubStock, Market, NaverEtfListResponse, Price, Stock}
 import org.jsoup.Jsoup
 import play.api.libs.json.Json
 import play.api.libs.ws.WSClient
@@ -24,9 +24,9 @@ object External {
         val naverEtfListResponse = Json.parse(response.body).as[NaverEtfListResponse]
         (naverEtfListResponse.resultCode=="success") match {
           case true =>
-            stockList ++= naverEtfListResponse.result.etfItemList.map(etf => Stock(Market.KOSPI, etf.itemname, etf.itemcode))
+            stockList ++= naverEtfListResponse.result.etfItemList.map(etf => Stock(Market.ETF, etf.itemname, etf.itemcode))
             stockList.toSeq
-          case false => throw ExternalResourceException
+          case false => throw ExternalResourceException()
         }
     }
   }
@@ -43,7 +43,7 @@ object External {
           if(stockAttrs.size != 0) stockList += Stock(market, stockAttrs(0).text, stockAttrs(1).text)
         }
         stockList.toList
-    }.recover{case _ => throw ExternalResourceException}
+    }.recover{case e => throw ExternalResourceException(e.getMessage)}
   }
 
   def requestUsaMarketStockList(market:Market)(implicit wsClient: WSClient, ec: ExecutionContext):Future[Seq[Stock]] = {
@@ -56,9 +56,18 @@ object External {
     wsClient.url(s"https://dumbstockapi.com/stock?exchanges=${marketParam}").get.map{
       response =>
         Json.parse(response.body).as[Seq[DumbStock]].foreach(dumbStock => stockList += Stock(market, dumbStock.name, dumbStock.ticker.replace("^", "-P")))
-        println(response.body)
         stockList.toSeq
-    }.recover{case _ => throw ExternalResourceException}
+    }.recover{case e => throw ExternalResourceException(e.getMessage)}
+  }
+
+  def requestUsaEtfStockList(implicit wsClient: WSClient, ec: ExecutionContext):Future[Seq[Stock]] = {
+    var stockList = ListBuffer.empty[Stock]
+    wsClient.url("https://finnhub.io/api/v1/stock/symbol?exchange=US&token=btq8hef48v6t9hdd4bn0").get().map{
+      response =>
+        Json.parse(response.body).as[Seq[FinnHubStock]].foreach(stock =>
+          if(stock.`type`.equals("ETF")) stockList += Stock(Market.ETF, stock.description, stock.symbol))
+        stockList.toSeq
+    }.recover{case e => throw ExternalResourceException(e.getMessage)}
   }
 
   def requestKoreaStockPrice(code:String, count:Int=Int.MaxValue)(implicit wsClient: WSClient, ec: ExecutionContext):Future[Seq[Price]] =
@@ -67,9 +76,9 @@ object External {
         val pattern = new scala.util.matching.Regex("<item data=\\\"(.*)\\\" />")
         pattern.findAllIn(response.body).matchData.map(_.group(1).split('|')).toList.filter(_.size==6)
           .map(arr => Price(code, arr(0), arr(4), arr(1), arr(2), arr(3), arr(5))).toSeq
-    }
+    }.recover{case e => throw ExternalResourceException(e.getMessage)}
 
-  def requestUsaStockPrice(code:String, year:Int=30)(implicit ec: ExecutionContext):Future[Seq[Price]] =
+  def requestUsaStockPrice(code:String, year:Int=100)(implicit ec: ExecutionContext):Future[Seq[Price]] =
     Future{
       val from = Calendar.getInstance()
       from.add(Calendar.YEAR, -1*year)
@@ -78,5 +87,7 @@ object External {
         stock =>
           Price(code, format.format(stock.getDate.getTime()), stock.getClose.toString, stock.getOpen.toString, stock.getHigh.toString, stock.getLow.toString, stock.getVolume.toString)
       }
-    }
+    }.recover{case e => throw ExternalResourceException(e.getMessage)}
+
+
 }

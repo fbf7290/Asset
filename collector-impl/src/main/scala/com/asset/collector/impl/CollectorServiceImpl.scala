@@ -6,7 +6,7 @@ import java.util.Calendar
 import akka.actor.ActorSystem
 import akka.{Done, NotUsed}
 import akka.util.{ByteString, Timeout}
-import com.asset.collector.api.{CollectorService, CollectorSettings, Country, Market, NaverEtfListResponse, Price, Stock, Test}
+import com.asset.collector.api.{CollectorService, CollectorSettings, Country, FinnHubStock, Market, NaverEtfListResponse, Price, Stock, Test}
 import com.asset.collector.impl.repo.stock.{StockRepo, StockRepoAccessor}
 import com.lightbend.lagom.scaladsl.api.ServiceCall
 import com.lightbend.lagom.scaladsl.api.transport.ResponseHeader
@@ -57,12 +57,12 @@ class CollectorServiceImpl(val system: ActorSystem, val wsClient: WSClient, val 
 
 
   override def requestBatchKoreaStock: ServiceCall[NotUsed, Done] = ServerServiceCall { (_, _) =>
-    batchActor.ask[BatchActor.Reply.type](reply => BatchActor.CollectKoreaStock(Some(reply)))
+    batchActor.ask[BatchActor.Reply.type](reply => BatchActor.CollectKoreaStocks(Some(reply)))
       .map(_ => (ResponseHeader.Ok.withStatus(200), Done))
   }
 
   override def requestBatchUsaStock: ServiceCall[NotUsed, Done] = ServerServiceCall { (_, _) =>
-    batchActor.ask[BatchActor.Reply.type](reply => BatchActor.CollectUsaStock(Some(reply)))
+    batchActor.ask[BatchActor.Reply.type](reply => BatchActor.CollectUsaStocks(Some(reply)))
       .map(_ => (ResponseHeader.Ok.withStatus(200), Done))
   }
 
@@ -74,5 +74,21 @@ class CollectorServiceImpl(val system: ActorSystem, val wsClient: WSClient, val 
   override def getUsaStockList: ServiceCall[NotUsed, Seq[Stock]] = ServerServiceCall { (_, _) =>
     StockRepoAccessor.selectStocks(Country.USA).run(stockDb)
       .map(stocks => (ResponseHeader.Ok.withStatus(200), stocks))
+  }
+
+  override def insertKoreaStockPrice(code:String): ServiceCall[NotUsed, Done] = ServerServiceCall { (_, _) =>
+    batchActor.ask[BatchActor.Response](reply => BatchActor.CollectKoreaStock(code, reply))
+      .collect{
+        case BatchActor.Complete => (ResponseHeader.Ok.withStatus(204), Done)
+        case BatchActor.NotComplete(exception) => throw exception
+      }
+  }
+
+  override def insertUsaStockPrice(code:String): ServiceCall[NotUsed, Done] = ServerServiceCall { (_, _) =>
+    batchActor.ask[BatchActor.Response](reply => BatchActor.CollectUsaStock(code, reply))
+      .collect{
+        case BatchActor.Complete => (ResponseHeader.Ok.withStatus(204), Done)
+        case BatchActor.NotComplete(exception) => throw exception
+      }
   }
 }

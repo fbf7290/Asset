@@ -60,6 +60,7 @@ object Market extends Enumeration {
   val SP500 = Value("sp500")
   val NYSE = Value("nyse")
   val AMEX = Value("amex")
+  val ETF = Value("etf")
 
 
   implicit val format1: Format[Market] = Json.formatEnum(Market)
@@ -72,6 +73,7 @@ object Market extends Enumeration {
     case "sp500" => Some(SP500)
     case "nyse" => Some(NYSE)
     case "amex" => Some(AMEX)
+    case "etf" => Some(ETF)
     case _ => None
   }
 }

@@ -14,6 +14,7 @@ val jwt ="com.pauldijou" %% "jwt-core" % "4.3.0"
 val jwtJson = "com.pauldijou" %% "jwt-play-json" % "4.3.0"
 val radixTree = "com.rklaehn" %% "radixtree" % "0.5.1"
 
+val slf4j = "org.slf4j" % "slf4j-api" % "1.7.28"
 val jsoup = "org.jsoup" % "jsoup" % "1.8.2"
 val yahooFinance = "com.yahoofinance-api" % "YahooFinanceAPI" % "3.15.0"
 val cats = "org.typelevel" %% "cats-core" % "2.1.1"
@@ -56,6 +57,7 @@ lazy val collectorImpl = (project in file("collector-impl"))
       macwire,
       yahooFinance,
       jsoup,
+      slf4j,
       cats,
       lagomScaladslAkkaDiscovery,
       akkaDiscoveryKubernetesApi,

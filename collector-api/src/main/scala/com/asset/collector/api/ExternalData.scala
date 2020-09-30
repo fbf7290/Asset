@@ -24,3 +24,8 @@ case class NaverEtfListResponse(resultCode:String, result:NaverEtfList)
 object NaverEtfListResponse {
   implicit val format :Format[NaverEtfListResponse]= Json.format
 }
+
+case class FinnHubStock(currency:String, description:String, displaySymbol:String, symbol:String, `type`:String)
+object FinnHubStock {
+  implicit val format :Format[FinnHubStock]= Json.format
+}
