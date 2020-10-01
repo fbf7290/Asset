@@ -11,12 +11,20 @@ services:
       - "7199:7199"
       - "9042:9042"
 
-  app:
+  asset:
     image: xjfflsl/asset:0.1.0
     environment:
       - CASSANDRA_CONTACT_POINT.0=172.17.0.1
     ports:
       - "10000:10000"
+
+  collector:
+    image: xjfflsl/collector:0.1.0
+    environment:
+      - CASSANDRA_CONTACT_POINT.0=172.17.0.1
+    ports:
+      - "10001:10001"
+
   web:
     image: xjfflsl/asset_web:0.0.1
     environment:
