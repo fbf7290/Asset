@@ -1,6 +1,6 @@
 package com.asset.collector.impl
 
-import akka.Done
+import akka.{Done, NotUsed}
 import akka.util.Timeout
 import com.asset.collector.api.{CollectorService, Country}
 import com.asset.collector.impl.repo.stock.{StockRepo, StockRepoAccessor}
@@ -65,6 +65,9 @@ abstract class CollectorApplication(context: LagomApplicationContext)
       StockRepoAccessor.createNowPriceTable(Country.USA).run(stockDb) zip
       StockRepoAccessor.createPriceTable(Country.KOREA).run(stockDb) zip
       StockRepoAccessor.createPriceTable(Country.USA).run(stockDb))
-      .map{_ => Done}
+      .map{_ =>
+        serviceClient.implement[CollectorService].insertKoreaStockPrice("005930").invoke(NotUsed).recover{case _ => ()}
+        Done}
   }, 60.seconds, None, 3.seconds, 30.seconds, 0.2)
+
 }

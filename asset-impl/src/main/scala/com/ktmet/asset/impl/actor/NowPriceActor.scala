@@ -5,11 +5,9 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import com.asset.collector.api.Country.Country
 import com.asset.collector.api.{CollectorService, Country, NowPrice}
-import com.asset.collector.impl.actor.NowPriceActor.{Command, Response}
 import com.ktmet.asset.common.api.Timestamp
 
 import scala.concurrent.duration._
-import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 
 object NowPriceActor {
@@ -64,17 +62,17 @@ object NowPriceActor {
 
           def ing(koreaPrices:Map[String, NowPrice]
                    , usaPrices:Map[String, NowPrice]):Behavior[Command] =
-            Behaviors.receiveMessage{
+            Behaviors.receiveMessage {
               case NowPrices(country , prices) =>
                 country match {
                   case Country.KOREA => ing(prices, usaPrices)
                   case Country.USA => ing(koreaPrices, prices)
                 }
               case GetPrice(code, replyTo) =>
-                koreaPrices.get(code) match {
+                koreaPrices.get(code.toUpperCase) match {
                   case Some(price) => replyTo ! PriceResponse(price)
                   case None =>
-                    usaPrices.get(code) match {
+                    usaPrices.get(code.toUpperCase) match {
                       case Some(price) => replyTo ! PriceResponse(price)
                       case None => replyTo ! NotFoundStock
                     }
