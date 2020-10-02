@@ -2,7 +2,7 @@ package com.asset.collector.impl.actor
 
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import akka.actor.typed.scaladsl.Behaviors
-import akka.stream.Materializer
+import akka.stream.{Materializer, OverflowStrategy}
 import akka.stream.scaladsl.{Sink, Source}
 import com.asset.collector.api.{Country, NowPrice, Stock}
 import com.asset.collector.impl.actor.BatchActor.Command
@@ -38,7 +38,7 @@ object NowPriceActor {
 
         def collectKoreaNowPrices = Source.future(StockRepoAccessor.selectStocks(Country.KOREA).run(stockDb))
           .flatMapConcat(iter => Source.fromIterator(() => iter.toIterator))
-          .grouped(500)
+          .grouped(500).buffer(2, OverflowStrategy.backpressure)
           .mapAsync(1)(External.requestKoreaStocksNowPrice)
           .map(prices => context.self.tell(NowPrices(Country.KOREA, prices)))
           .runWith(Sink.ignore)
@@ -48,8 +48,8 @@ object NowPriceActor {
 
         def collectUsaNowPrices = Source.future(StockRepoAccessor.selectStocks(Country.USA).run(stockDb))
           .flatMapConcat(iter => Source.fromIterator(() => iter.toIterator))
-          .grouped(500)
-          .mapAsync(1)(External.requestUsaStocksNowPrice)
+          .grouped(500).buffer(2, OverflowStrategy.backpressure)
+          .mapAsync(2)(External.requestUsaStocksNowPrice)
           .map(prices => context.self.tell(NowPrices(Country.USA, prices)))
           .runWith(Sink.ignore)
 

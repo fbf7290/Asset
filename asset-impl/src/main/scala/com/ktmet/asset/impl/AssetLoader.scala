@@ -35,7 +35,7 @@ abstract class AssetApplication(context: LagomApplicationContext)
 
   implicit lazy val collectorService = serviceClient.implement[CollectorService]
   override lazy val lagomServer = serverFor[AssetService](wire[AssetServiceImpl])
-  implicit lazy val timeout:Timeout = Timeout(5.seconds)
+  implicit lazy val timeout:Timeout = Timeout(10.seconds)
 
   override lazy val jsonSerializerRegistry = new JsonSerializerRegistry {
     override def serializers  = UserEntity.serializers

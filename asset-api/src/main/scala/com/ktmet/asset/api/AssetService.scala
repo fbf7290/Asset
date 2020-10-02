@@ -1,7 +1,7 @@
 package com.ktmet.asset.api
 
 import akka.{Done, NotUsed}
-import com.asset.collector.api.Stock
+import com.asset.collector.api.{NowPrice, Stock}
 import com.ktmet.asset.common.api.ClientExceptionSerializer
 import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Descriptor, Service, ServiceAcl, ServiceCall}
@@ -20,6 +20,7 @@ trait AssetService extends Service{
 
 
   def autoCompleteStock(prefix:String): ServiceCall[NotUsed, AutoCompleteMessage]
+  def getNowPrice(code:String): ServiceCall[NotUsed, NowPrice]
 
 
   override def descriptor: Descriptor = {
@@ -35,6 +36,7 @@ trait AssetService extends Service{
         restCall(Method.GET, "/user", getUser),
 
         restCall(Method.GET, "/search/prefix/:prefix", autoCompleteStock _),
+        restCall(Method.GET, "/stock/now/:code", getNowPrice _),
 
       ).withAutoAcl(true)
       .withExceptionSerializer(new ClientExceptionSerializer(Environment.simple()))

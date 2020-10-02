@@ -40,7 +40,6 @@ abstract class CollectorApplication(context: LagomApplicationContext)
 
   override lazy val lagomServer = serverFor[CollectorService](wire[CollectorServiceImpl])
 
-
   val serializers1 : Seq[JsonSerializer[_]] = Seq(
     JsonSerializer[CreatingUser]
   )
@@ -56,6 +55,7 @@ abstract class CollectorApplication(context: LagomApplicationContext)
     )
   }
 
+
   lazy val stockDb = StockRepo(cassandraSession)
 
   ClusterStartupTask(actorSystem, "Init", () => {
@@ -64,6 +64,7 @@ abstract class CollectorApplication(context: LagomApplicationContext)
       StockRepoAccessor.createNowPriceTable(Country.KOREA).run(stockDb) zip
       StockRepoAccessor.createNowPriceTable(Country.USA).run(stockDb) zip
       StockRepoAccessor.createPriceTable(Country.KOREA).run(stockDb) zip
-      StockRepoAccessor.createPriceTable(Country.USA).run(stockDb)).map(_ => Done)
+      StockRepoAccessor.createPriceTable(Country.USA).run(stockDb))
+      .map{_ => Done}
   }, 60.seconds, None, 3.seconds, 30.seconds, 0.2)
 }
