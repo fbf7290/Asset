@@ -4,7 +4,7 @@ import akka.Done
 import cats.data.OptionT
 import cats.instances.future._
 import com.asset.collector.api.Country.Country
-import com.asset.collector.api.{Market, Price, Stock}
+import com.asset.collector.api.{Market, NowPrice, Price, Stock}
 import com.lightbend.lagom.scaladsl.persistence.cassandra.CassandraSession
 import com.datastax.driver.core.BatchStatement
 
@@ -65,6 +65,29 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
           .setString("low", price.low)
           .setString("high", price.high)
           .setString("volume", price.volume))
+      }
+      r <- session.executeWriteBatch(batch)
+    } yield {
+      r
+    }
+  }
+
+  override def createNowPriceTable(country: Country): Future[Done] =
+    session.executeCreateTable(s"create table if not exists ${country}_now_price (ignored TEXT, code TEXT, price TEXT, PRIMARY KEY(ignored, code))")
+
+  override def selectNowPrices(country: Country): Future[Seq[NowPrice]] =
+    session.selectAll(s"select code, price from ${country}_now_price where ignored='1'")
+    .map(rows => rows.map(row => NowPrice(row.getString("code"), row.getString("price"))))
+
+  override def insertBatchNowPrice(country: Country, prices: Seq[NowPrice]): Future[Done] =  {
+    for {
+      stmt <- session.prepare(s"INSERT INTO ${country}_now_price (ignored, code, price) VALUES (?, ?, ?)")
+      batch = new BatchStatement
+      _ = prices.map { price =>
+        batch.add(stmt.bind
+          .setString("code", price.code)
+          .setString("ignored", "1")
+          .setString("price", price.price))
       }
       r <- session.executeWriteBatch(batch)
     } yield {

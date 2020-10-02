@@ -64,7 +64,7 @@ lazy val collectorImpl = (project in file("collector-impl"))
       lagomScaladslPersistenceCassandra
     )
   ).settings(dockerSettings)
-  .dependsOn(collectorApi)
+  .dependsOn(commonApi, collectorApi)
 
 lazy val assetApi = (project in file("asset-api"))
   .settings(

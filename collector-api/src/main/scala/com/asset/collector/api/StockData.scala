@@ -61,6 +61,7 @@ object Market extends Enumeration {
   val NYSE = Value("nyse")
   val AMEX = Value("amex")
   val ETF = Value("etf")
+  val NONE = Value("none")
 
 
   implicit val format1: Format[Market] = Json.formatEnum(Market)
@@ -74,6 +75,7 @@ object Market extends Enumeration {
     case "nyse" => Some(NYSE)
     case "amex" => Some(AMEX)
     case "etf" => Some(ETF)
+    case "none" => Some(NONE)
     case _ => None
   }
 }
@@ -93,6 +95,7 @@ case class Stock(market:Market, name:String, code:String){
     code.hashCode
   }
 
+  def setMarket(market: Market) = copy(market = market)
 }
 object Stock {
   implicit val format :Format[Stock]= Json.format
@@ -101,4 +104,9 @@ object Stock {
 case class Price(code:String, date:String, close:String, open:String, high:String, low:String, volume:String)
 object Price {
   implicit val format :Format[Price]= Json.format
+}
+
+case class NowPrice(code:String, price:String)
+object NowPrice {
+  implicit val format :Format[NowPrice]= Json.format
 }

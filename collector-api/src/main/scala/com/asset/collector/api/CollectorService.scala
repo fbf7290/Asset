@@ -13,6 +13,8 @@ trait CollectorService extends Service{
   def getKoreaStockList: ServiceCall[NotUsed, Seq[Stock]]
   def getUsaStockList: ServiceCall[NotUsed, Seq[Stock]]
 
+  def getKoreaNowPrices: ServiceCall[NotUsed, Map[String, NowPrice]]
+  def getUsaNowPrices: ServiceCall[NotUsed, Map[String, NowPrice]]
 
   def insertKoreaStockPrice(code:String): ServiceCall[NotUsed, Done]
   def insertUsaStockPrice(code:String): ServiceCall[NotUsed, Done]
@@ -30,6 +32,9 @@ trait CollectorService extends Service{
 
         restCall(Method.GET, "/stock/korea", getKoreaStockList),
         restCall(Method.GET, "/stock/usa", getUsaStockList),
+
+        restCall(Method.GET, "/stock/korea/prices", getKoreaNowPrices),
+        restCall(Method.GET, "/stock/usa/prices", getUsaNowPrices),
 
         restCall(Method.POST, "/stock/korea/batch", requestBatchKoreaStock),
         restCall(Method.POST, "/stock/usa/batch", requestBatchUsaStock),

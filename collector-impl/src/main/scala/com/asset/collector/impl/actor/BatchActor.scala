@@ -15,11 +15,13 @@ import play.api.libs.ws.WSClient
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 import com.asset.collector.api.Country.Country
+import com.asset.collector.api.Market.Market
 import com.asset.collector.impl.Fcm
 import com.asset.collector.impl.Fcm.FcmMessage
 import com.asset.collector.impl.acl.External
 import play.api.libs.json.JsNull
 
+import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 //import cats.implicits._
 import scala.util.{Failure, Success}
@@ -42,7 +44,8 @@ object BatchActor {
   case class NotComplete(exception:Throwable) extends Response
 
   def apply(stockDb:StockRepoTrait[Future])
-           (implicit wsClient: WSClient, ec: ExecutionContext, materializer: Materializer):Behavior[Command] = Behaviors.setup{ context =>
+           (implicit wsClient: WSClient, ec: ExecutionContext
+            , materializer: Materializer):Behavior[Command] = Behaviors.setup{ context =>
     Behaviors.supervise[Command]{
       Behaviors.withStash(20){ buffer =>
         Behaviors.withTimers[Command] { timers =>
@@ -120,15 +123,21 @@ object BatchActor {
               replyTo.map(_.tell(Reply))
               context.pipeToSelf {
                 for{
-                  nowStocksList <- Future.sequence(Set(External.requestUsaMarketStockList(Market.NASDAQ),
+                  dumbStocks <- Future.sequence(Set(External.requestUsaMarketStockList(Market.NASDAQ),
                     External.requestUsaMarketStockList(Market.NYSE),
                     External.requestUsaMarketStockList(Market.AMEX),
                     External.requestUsaEtfStockList))
-                  nowStocks = nowStocksList.foldLeft(Set.empty[Stock])((r, stocks) => r ++ stocks)
-                  _ <- refreshStockList(Country.USA, nowStocks).run(stockDb)
+                  marketMap = dumbStocks.foldLeft(mutable.Map.empty[String , Market]){(map, stocks) =>
+                    stocks.foreach(stock=>   map += (stock.code->stock.market))
+                    map
+                  }
+                  finnHubStocks <- External.requestUsaMarketStockListByFinnHub
+                  nowStocks = finnHubStocks.withFilter(stock => marketMap.contains(stock.code))
+                    .map(stock=> stock.setMarket(marketMap.get(stock.code).get))
+                  _ <- refreshStockList(Country.USA, nowStocks.toSet).run(stockDb)
                 } yield {
                   val failList = ListBuffer.empty[String]
-                  Source(nowStocks).zipWithIndex.mapAsync(8) { case (stock, index) =>
+                  Source(nowStocks.toList).zipWithIndex.mapAsync(8) { case (stock, index) =>
                     println(s"${index} ${stock}")
                     External.requestUsaStockPrice(stock.code).map(prices=>(index, prices)).recover{case _ =>
                       failList += stock.code

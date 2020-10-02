@@ -4,9 +4,10 @@ import java.nio.file.Paths
 import java.util.Calendar
 
 import akka.actor.ActorSystem
+import akka.actor.typed.SupervisorStrategy
 import akka.{Done, NotUsed}
 import akka.util.{ByteString, Timeout}
-import com.asset.collector.api.{CollectorService, CollectorSettings, Country, FinnHubStock, Market, NaverEtfListResponse, Price, Stock, Test}
+import com.asset.collector.api.{CollectorService, CollectorSettings, Country, FinnHubStock, Market, NaverEtfListResponse, NowPrice, Price, Stock, Test}
 import com.asset.collector.impl.repo.stock.{StockRepo, StockRepoAccessor}
 import com.lightbend.lagom.scaladsl.api.ServiceCall
 import com.lightbend.lagom.scaladsl.api.transport.ResponseHeader
@@ -27,33 +28,33 @@ import com.asset.collector.impl.acl.External
 import com.lightbend.lagom.internal.persistence.cluster.ClusterStartupTask
 import play.api.libs.json.{JsNull, Json}
 import akka.actor.typed.scaladsl.adapter._
-import com.asset.collector.impl.actor.BatchActor
+import com.asset.collector.impl.actor.{BatchActor, NowPriceActor}
 import akka.actor.typed.scaladsl.AskPattern._
+import akka.actor.typed.scaladsl.Behaviors
+import akka.cluster.typed.{ClusterSingleton, SingletonActor}
 import akka.stream.Materializer
 import akka.stream.scaladsl.{FileIO, Sink, Source}
 import cats.data.OptionT
 import com.asset.collector.impl.Fcm.FcmMessage
 
+import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
 
-class CollectorServiceImpl(val system: ActorSystem, val wsClient: WSClient, val cassandraSession: CassandraSession)
+class CollectorServiceImpl(val system: ActorSystem
+                           , val wsClient: WSClient
+                           , val stockDb : StockRepo
+                           , val cassandraSession: CassandraSession)
       (implicit ec: ExecutionContext, timeout:Timeout,  materializer: Materializer) extends CollectorService {
 
   implicit val wsC = wsClient
   implicit val typedSystem = system.toTyped
 
-  val stockDb = StockRepo(cassandraSession)
 
   val batchActor = system.spawn(BatchActor(stockDb), "batchActor")
+  val nowPriceActor = ClusterSingleton(typedSystem).init(SingletonActor(NowPriceActor(stockDb), "nowPriceActor"))
 
-  ClusterStartupTask(system, "Init", () => {
-    (StockRepoAccessor.createStockTable(Country.KOREA).run(stockDb) zip
-      StockRepoAccessor.createStockTable(Country.USA).run(stockDb) zip
-      StockRepoAccessor.createPriceTable(Country.KOREA).run(stockDb) zip
-      StockRepoAccessor.createPriceTable(Country.USA).run(stockDb)).map(_ => Done)
-  }, 60.seconds, None, 3.seconds, 30.seconds, 0.2)
 
 
   override def requestBatchKoreaStock: ServiceCall[NotUsed, Done] = ServerServiceCall { (_, _) =>
@@ -89,6 +90,28 @@ class CollectorServiceImpl(val system: ActorSystem, val wsClient: WSClient, val 
       .collect{
         case BatchActor.Complete => (ResponseHeader.Ok.withStatus(204), Done)
         case BatchActor.NotComplete(exception) => throw exception
+      }
+  }
+
+  override def getKoreaNowPrices: ServiceCall[NotUsed, Map[String, NowPrice]] = ServerServiceCall { (_, _) =>
+    nowPriceActor.ask[NowPriceActor.Response](reply => NowPriceActor.GetPrices(Country.KOREA, reply))
+      .flatMap{
+        case NowPriceActor.PricesResponse(prices) => Future.successful(ResponseHeader.Ok.withStatus(200), prices)
+        case NowPriceActor.Initializing =>
+          StockRepoAccessor.selectNowPrices(Country.KOREA).run(stockDb)
+            .map(prices => prices.foldLeft(mutable.Map.empty[String,NowPrice])((map, price) => map + (price.code -> price)))
+            .map(prices => (ResponseHeader.Ok.withStatus(200), prices.toMap))
+      }
+  }
+
+  override def getUsaNowPrices: ServiceCall[NotUsed, Map[String, NowPrice]] = ServerServiceCall { (_, _) =>
+    nowPriceActor.ask[NowPriceActor.Response](reply => NowPriceActor.GetPrices(Country.USA, reply))
+      .flatMap{
+        case NowPriceActor.PricesResponse(prices) => Future.successful(ResponseHeader.Ok.withStatus(200), prices)
+        case NowPriceActor.Initializing =>
+          StockRepoAccessor.selectNowPrices(Country.USA).run(stockDb)
+            .map(prices => prices.foldLeft(mutable.Map.empty[String,NowPrice])((map, price) => map + (price.code -> price)))
+            .map(prices => (ResponseHeader.Ok.withStatus(200), prices.toMap))
       }
   }
 }

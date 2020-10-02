@@ -1,7 +1,10 @@
 package com.asset.collector.impl
 
+import akka.Done
 import akka.util.Timeout
-import com.asset.collector.api.CollectorService
+import com.asset.collector.api.{CollectorService, Country}
+import com.asset.collector.impl.repo.stock.{StockRepo, StockRepoAccessor}
+import com.lightbend.lagom.internal.persistence.cluster.ClusterStartupTask
 import com.lightbend.lagom.scaladsl.akka.discovery.AkkaDiscoveryComponents
 import com.lightbend.lagom.scaladsl.client.ConfigurationServiceLocatorComponents
 import com.lightbend.lagom.scaladsl.devmode.LagomDevModeComponents
@@ -11,9 +14,9 @@ import com.lightbend.lagom.scaladsl.server.{LagomApplication, LagomApplicationCo
 import com.softwaremill.macwire.wire
 import play.api.libs.json.{Format, Json}
 import play.api.libs.ws.ahc.AhcWSComponents
+import cats.instances.future._
 
 import scala.collection.immutable.Seq
-
 import scala.concurrent.duration._
 
 class CollectorLoader extends LagomApplicationLoader {
@@ -52,4 +55,15 @@ abstract class CollectorApplication(context: LagomApplicationContext)
       JsonSerializer[CreatingUser]
     )
   }
+
+  lazy val stockDb = StockRepo(cassandraSession)
+
+  ClusterStartupTask(actorSystem, "Init", () => {
+    (StockRepoAccessor.createStockTable(Country.KOREA).run(stockDb) zip
+      StockRepoAccessor.createStockTable(Country.USA).run(stockDb) zip
+      StockRepoAccessor.createNowPriceTable(Country.KOREA).run(stockDb) zip
+      StockRepoAccessor.createNowPriceTable(Country.USA).run(stockDb) zip
+      StockRepoAccessor.createPriceTable(Country.KOREA).run(stockDb) zip
+      StockRepoAccessor.createPriceTable(Country.USA).run(stockDb)).map(_ => Done)
+  }, 60.seconds, None, 3.seconds, 30.seconds, 0.2)
 }
