@@ -106,7 +106,7 @@ object Price {
   implicit val format :Format[Price]= Json.format
 }
 
-case class NowPrice(code:String, price:String)
+case class NowPrice(code:String, price:String, changePercent:String)
 object NowPrice {
   implicit val format :Format[NowPrice]= Json.format
 }

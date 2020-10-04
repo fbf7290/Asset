@@ -57,7 +57,7 @@ class CollectorServiceImpl(val system: ActorSystem
 
 
 
-  override def requestBatchKoreaStock: ServiceCall[NotUsed, Done] = ServerServiceCall { (_, _) =>
+  override def requestBatchKoreaStock: ServiceCall[NotUsed, Done] = ServerServiceCall { (a, b) =>
     batchActor.ask[BatchActor.Reply.type](reply => BatchActor.CollectKoreaStocks(Some(reply)))
       .map(_ => (ResponseHeader.Ok.withStatus(200), Done))
   }

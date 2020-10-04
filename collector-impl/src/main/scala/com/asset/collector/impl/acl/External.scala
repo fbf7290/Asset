@@ -106,13 +106,13 @@ object External {
           if(stock.market == Market.KOSPI || stock.market == Market.ETF) stock.code+".KS"
           else stock.code+".KQ").toArray)
         prices.asScala.values.map{stock =>
-      NowPrice(stock.getSymbol.split("\\.")(0), stock.getQuote.getPrice.toString)}.toSeq
+      NowPrice(stock.getSymbol.split("\\.")(0), stock.getQuote.getPrice.toString, stock.getQuote.getChangeInPercent.toString)}.toSeq
     }
 
   def requestUsaStocksNowPrice(stocks:Seq[Stock])(implicit ec: ExecutionContext):Future[Seq[NowPrice]] =
     Future{
       println(stocks.size)
       val prices = YahooFinance.get(stocks.map(stock =>stock.code).toArray)
-      prices.asScala.values.map(stock => NowPrice(stock.getSymbol, stock.getQuote.getPrice.toString)).toSeq
+      prices.asScala.values.map(stock => NowPrice(stock.getSymbol, stock.getQuote.getPrice.toString, stock.getQuote.getChangeInPercent.toString)).toSeq
     }
 }

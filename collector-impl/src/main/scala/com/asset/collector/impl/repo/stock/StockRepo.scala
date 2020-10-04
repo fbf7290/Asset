@@ -73,21 +73,22 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
   }
 
   override def createNowPriceTable(country: Country): Future[Done] =
-    session.executeCreateTable(s"create table if not exists ${country}_now_price (ignored TEXT, code TEXT, price TEXT, PRIMARY KEY(ignored, code))")
+    session.executeCreateTable(s"create table if not exists ${country}_now_price (ignored TEXT, code TEXT, price TEXT, change_percent TEXT, PRIMARY KEY(ignored, code))")
 
   override def selectNowPrices(country: Country): Future[Seq[NowPrice]] =
     session.selectAll(s"select code, price from ${country}_now_price where ignored='1'")
-    .map(rows => rows.map(row => NowPrice(row.getString("code"), row.getString("price"))))
+    .map(rows => rows.map(row => NowPrice(row.getString("code"), row.getString("price"), row.getString("change_percent"))))
 
   override def insertBatchNowPrice(country: Country, prices: Seq[NowPrice]): Future[Done] =  {
     for {
-      stmt <- session.prepare(s"INSERT INTO ${country}_now_price (ignored, code, price) VALUES (?, ?, ?)")
+      stmt <- session.prepare(s"INSERT INTO ${country}_now_price (ignored, code, price, change_percent) VALUES (?, ?, ?, ?)")
       batch = new BatchStatement
       _ = prices.map { price =>
         batch.add(stmt.bind
           .setString("code", price.code)
           .setString("ignored", "1")
-          .setString("price", price.price))
+          .setString("price", price.price)
+          .setString("change_percent", price.changePercent))
       }
       r <- session.executeWriteBatch(batch)
     } yield {
