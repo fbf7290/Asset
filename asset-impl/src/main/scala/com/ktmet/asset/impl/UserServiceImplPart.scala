@@ -2,7 +2,7 @@ package com.ktmet.asset.impl
 
 import akka.{Done, NotUsed}
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
-import com.ktmet.asset.api.{AssetSettings, LoginMessage, RefreshingTokenMessage, SocialLoggingInMessage, TokenMessage, UserId, UserState}
+import com.ktmet.asset.api.{AssetSettings, LoginMessage, RefreshingTokenMessage, SocialLoggingInMessage, Token, TokenMessage, UserId, UserState}
 import com.ktmet.asset.common.api.Exception.NotFoundException
 import com.ktmet.asset.impl.entity.UserEntity
 import com.ktmet.asset.impl.internal.{Authenticator, ImplBase}
@@ -52,7 +52,7 @@ trait UserServiceImplPart extends ImplBase with Authenticator {
           val userId = UserId(socialType, socialId)
           userEntityRef(userId.toString)
             .ask[UserEntity.TokenResponse](reply => UserEntity.LogIn(userId, reply))
-            .map(token => (ResponseHeader.Ok.withStatus(201),LoginMessage(userId.toString, token.accessToken.get)))
+            .map(token => (ResponseHeader.Ok.withStatus(201),LoginMessage(userId.toString, token.accessToken, token.refreshToken.get)))
         case None => throw new NotFoundException
       }
     }
@@ -82,9 +82,9 @@ trait UserServiceImplPart extends ImplBase with Authenticator {
   override def refreshToken: ServiceCall[RefreshingTokenMessage, TokenMessage] =
     ServerServiceCall{ (_, refreshingTokenMessage) =>
       userEntityRef(refreshingTokenMessage.userId)
-        .ask[UserEntity.Response](reply => UserEntity.RefreshToken(refreshingTokenMessage.accessToken, reply))
+        .ask[UserEntity.Response](reply => UserEntity.RefreshToken(Token(refreshingTokenMessage.accessToken, refreshingTokenMessage.refreshToken), reply))
         .collect{
-          case m:UserEntity.TokenResponse => (ResponseHeader.Ok.withStatus(201), TokenMessage(m.accessToken.get))
+          case m:UserEntity.TokenResponse => (ResponseHeader.Ok.withStatus(201), TokenMessage(m.accessToken, m.refreshToken))
           case UserEntity.TokenException => throw UserEntity.TokenException
           case UserEntity.NoUserException => throw UserEntity.NoUserException
         }

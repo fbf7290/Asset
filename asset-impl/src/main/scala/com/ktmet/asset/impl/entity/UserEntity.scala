@@ -4,7 +4,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import akka.cluster.sharding.typed.scaladsl.{EntityContext, EntityTypeKey}
 import akka.persistence.typed.PersistenceId
 import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, ReplyEffect, RetentionCriteria}
-import com.ktmet.asset.api.{AssetSettings, UserId, UserState}
+import com.ktmet.asset.api.{AssetSettings, Token, UserId, UserState}
 import com.ktmet.asset.common.api.{ClientException, Timestamp}
 import com.lightbend.lagom.scaladsl.persistence.{AggregateEvent, AggregateEventShards, AggregateEventTag, AggregateEventTagger, AkkaTaggerAdapter}
 import com.lightbend.lagom.scaladsl.playjson.JsonSerializer
@@ -14,6 +14,7 @@ import play.api.libs.json.{Format, Json}
 import scala.concurrent.duration._
 import scala.collection.immutable.Seq
 import scala.concurrent.duration.Duration
+import scala.util.Success
 
 object UserEntity {
 
@@ -23,7 +24,7 @@ object UserEntity {
   case class LogOut(accessToken:String, replyTo:ActorRef[Response]) extends Command
   case class DeleteUser(replyTo:ActorRef[Response]) extends Command
   case class ContainToken(accessToken:String, replyTo:ActorRef[Response]) extends Command
-  case class RefreshToken(accessToken:String, replyTo:ActorRef[Response]) extends Command
+  case class RefreshToken(token:Token, replyTo:ActorRef[Response]) extends Command
   case class GetUser(replyTo:ActorRef[Response]) extends Command
 
   trait ResponseSerializable
@@ -31,7 +32,7 @@ object UserEntity {
 
   case object Yes extends Response
   case object No extends Response
-  case class TokenResponse(accessToken:Option[String]) extends Response
+  case class TokenResponse(accessToken:String, refreshToken:Option[String]) extends Response
   case class UserResponse(userState:UserState) extends Response
 
   case object NoUserException extends ClientException(404, "NoUserException", "User does not exist") with Response
@@ -46,11 +47,11 @@ object UserEntity {
     val Tag: AggregateEventShards[Event] = AggregateEventTag.sharded[Event](numShards = 5)
   }
 
-  case class UserCreated(userId:UserId, accessToken:String) extends Event
+  case class UserCreated(userId:UserId, token:Token) extends Event
   object UserCreated{
     implicit val format:Format[UserCreated] = Json.format
   }
-  case class LoggedIn(userId:UserId, accessToken:String) extends Event
+  case class LoggedIn(userId:UserId, token:Token) extends Event
   object LoggedIn{
     implicit val format:Format[LoggedIn] = Json.format
   }
@@ -62,7 +63,7 @@ object UserEntity {
   object UserDeleted{
     implicit val format:Format[UserDeleted] = Json.format
   }
-  case class TokenRefreshed(lastAccessToken:String, newAccessToken:String) extends Event
+  case class TokenRefreshed(lastToken:Token, newToken:Token) extends Event
   object TokenRefreshed{
     implicit val format:Format[TokenRefreshed] = Json.format
   }
@@ -93,6 +94,7 @@ object UserEntity {
     JsonSerializer[UserDeleted],
     JsonSerializer[TokenRefreshed],
     JsonSerializer[UserId],
+    JsonSerializer[Token],
     JsonSerializer[UserState],
     JsonSerializer[UserEntity]
   )
@@ -112,27 +114,30 @@ final case class UserEntity(userState:Option[UserState]) {
     foldUser(func)(Effect.reply(replyTo)(NoUserException))
 
 
-  private def createAccessToken(userId:UserId):String = JwtJson.encode(
-    Json.obj("userId"-> userId.toString, "exp"-> Timestamp.afterDuration(AssetSettings.accessTokenExpiredSecond.seconds)),
+  private def createToken(userId:UserId, duration:FiniteDuration):String  = JwtJson.encode(
+    Json.obj("userId"-> userId.toString, "exp"-> Timestamp.afterDuration(duration)),
     AssetSettings.jwtSecretKey,
     JwtAlgorithm.HS256)
+
+  private def createAccessToken(userId:UserId):String = createToken(userId, AssetSettings.accessTokenExpiredSecond.seconds)
+  private def createRefreshToken(userId:UserId):String = createToken(userId, AssetSettings.refreshTokenExpiredSecond.seconds)
 
   def applyCommand(cmd: Command): ReplyEffect[Event, UserEntity] = cmd match {
     case LogIn(userId, replyTo) => onLogIn(userId, replyTo)
     case LogOut(accessToken, replyTo) => onLogOut(accessToken, replyTo)
     case DeleteUser(replyTo) => onDeleteUser(replyTo)
     case ContainToken(accessToken, replyTo) => onContainToken(accessToken, replyTo)
-    case RefreshToken(accessToken, replyTo) => onRefreshToken(accessToken, replyTo)
+    case RefreshToken(token, replyTo) => onRefreshToken(token, replyTo)
     case GetUser(replyTo) => onGetUser(replyTo)
   }
 
 
   def onLogIn(userId: UserId, replyTo: ActorRef[TokenResponse]): ReplyEffect[Event, UserEntity] = {
-    val token = createAccessToken(userId)
+    val token = Token(createAccessToken(userId), createRefreshToken(userId))
     foldUser{ _ =>
-      Effect.persist(LoggedIn(userId, token)).thenReply(replyTo)(_=>TokenResponse(Some(token)))
+      Effect.persist(LoggedIn(userId, token)).thenReply(replyTo)(_=>TokenResponse(token.accessToken, Some(token.refreshToken)))
     }{
-      Effect.persist(UserCreated(userId, token)).thenReply(replyTo)(_=>TokenResponse(Some(token)))
+      Effect.persist(UserCreated(userId, token)).thenReply(replyTo)(_=>TokenResponse(token.accessToken, Some(token.refreshToken)))
     }
   }
   private def onLogOut(accessToken:String, replyTo:ActorRef[Response]): ReplyEffect[Event, UserEntity] =
@@ -150,33 +155,39 @@ final case class UserEntity(userState:Option[UserState]) {
         case false => Effect.reply(replyTo)(No)
       }
     )
-  private def onRefreshToken(accessToken: String, replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
+  private def onRefreshToken(token: Token, replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
     funcWithUser(replyTo){ state =>
-      state.containToken(accessToken) match {
+      state.containToken(token) match {
         case true =>
-          val newAccessToken = createAccessToken(state.userId)
-          Effect.persist(TokenRefreshed(accessToken, newAccessToken)).thenReply(replyTo)(_=>TokenResponse(Some(newAccessToken)))
+          JwtJson.decodeJson(token.refreshToken, AssetSettings.jwtSecretKey, Seq(JwtAlgorithm.HS256)) match {
+            case Success(claim) =>
+              val newAccessToken = createAccessToken(state.userId)
+              val newRefreshToken =
+                if((claim \ "exp").as[Long] - Timestamp.now < AssetSettings.refreshTokenAutoRefreshSecond)
+                  Some(createRefreshToken(state.userId))
+                else None
+              val newToken = newRefreshToken.fold(Token(newAccessToken, token.refreshToken))(rToken => Token(newAccessToken, rToken))
+              Effect.persist(TokenRefreshed(token ,newToken)).thenReply(replyTo)(_=>TokenResponse(newAccessToken, newRefreshToken))
+            case _ => Effect.reply(replyTo)(TokenException)
+          }
         case false => Effect.reply(replyTo)(TokenException)
       }
     }
   private def onGetUser(replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
-    funcWithUser(replyTo){state =>
-      println(state.accessTokens.size)
-      Effect.reply(replyTo)(UserResponse(state))
-    }
+    funcWithUser(replyTo){state => Effect.reply(replyTo)(UserResponse(state))}
 
   def applyEvent(evt: Event): UserEntity = evt match {
-    case UserCreated(userId, accessToken) => onUserCreated(userId, accessToken)
-    case LoggedIn(_, accessToken) => onLoggedIn(accessToken)
+    case UserCreated(userId, token) => onUserCreated(userId, token)
+    case LoggedIn(_, token) => onLoggedIn(token)
     case LoggedOut(_, accessToken) => onLoggedOut(accessToken)
     case UserDeleted(_) => onUserDeleted
-    case TokenRefreshed(lastAccessToken, newAccessToken) => onTokenRefreshed(lastAccessToken, newAccessToken)
+    case TokenRefreshed(lastToken, newToken) => onTokenRefreshed(lastToken, newToken)
   }
 
-  private def onUserCreated(userId: UserId, accessToken: String): UserEntity = copy(userState = Some(UserState(userId, List(accessToken))))
-  private def onLoggedIn(accessToken: String): UserEntity = copy(userState.map(_.loggedIn(accessToken)))
+  private def onUserCreated(userId: UserId, token: Token): UserEntity = copy(userState = Some(UserState(userId, List(token))))
+  private def onLoggedIn(token: Token): UserEntity = copy(userState.map(_.loggedIn(token)))
   private def onLoggedOut(accessToken: String): UserEntity = copy(userState.map(_.loggedOut(accessToken)))
   private def onUserDeleted: UserEntity = copy(None)
-  private def onTokenRefreshed(lastAccessToken:String, newAccessToken: String): UserEntity =
-    copy(userState.map(_.loggedOut(lastAccessToken).loggedIn(newAccessToken)))
+  private def onTokenRefreshed(lastAccessToken:Token, newAccessToken: Token): UserEntity =
+    copy(userState.map(_.refreshToken(lastAccessToken, newAccessToken)))
 }
