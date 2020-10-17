@@ -4,6 +4,8 @@ import java.text.SimpleDateFormat
 import java.time.Instant
 import java.util.{Calendar, Date}
 
+import akka.remote.WireFormats.FiniteDuration
+import akka.util.Timeout
 import com.asset.collector.api.Exception.ExternalResourceException
 import com.asset.collector.api.Market.Market
 import com.asset.collector.api.{DumbStock, FinnHubStock, KrwUsd, Market, NaverEtfListResponse, NowPrice, Price, Stock}
@@ -16,7 +18,9 @@ import yahoofinance.histquotes.Interval
 
 import collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.{ExecutionContext, Future, duration}
+import scala.concurrent.duration._
 
 object External {
   def requestKoreaEtfStockList(implicit wsClient: WSClient, ec: ExecutionContext):Future[Seq[Stock]] = {
@@ -37,15 +41,20 @@ object External {
   def requestKoreaMarketStockList(market: Market)(implicit wsClient: WSClient, ec: ExecutionContext):Future[Seq[Stock]]= {
     var stockList = ListBuffer.empty[Stock]
     val marketParam = if(market == Market.KOSDAQ) "kosdaqMkt" else if(market == Market.KOSPI) "stockMkt"
-    wsClient.url(s"http://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13&marketType=${marketParam}").get().map{
+    wsClient.url(s"https://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13&marketType=${marketParam}").get().map{
       response =>
+        println("1")
+        println(response)
+        println(response.body)
         val stocks = Jsoup.parseBodyFragment(response.body).body().getElementsByTag("tr")
         for(stock <- stocks.asScala){
           val stockAttrs = stock.getElementsByTag("td").asScala
           if(stockAttrs.size != 0) stockList += Stock(market, stockAttrs(0).text, stockAttrs(1).text)
         }
+        println(stockList)
         stockList.toList
-    }
+    }.recover{case e => println(e)
+      throw e}
   }
 
   def requestUsaMarketStockList(market:Market)(implicit wsClient: WSClient, ec: ExecutionContext):Future[Seq[Stock]] = {
@@ -87,7 +96,7 @@ object External {
       response =>
         val pattern = new scala.util.matching.Regex("<item data=\\\"(.*)\\\" />")
         pattern.findAllIn(response.body).matchData.map(_.group(1).split('|')).toList.filter(_.size==6)
-          .map(arr => Price(code, arr(0), arr(4), arr(1), arr(2), arr(3), arr(5))).toSeq
+          .map(arr => Price(code, arr(0), BigDecimal(arr(4)), BigDecimal(arr(1)), BigDecimal(arr(2)), BigDecimal(arr(3)), arr(5).toLong)).toSeq
     }
 
   def requestUsaStockPrice(code:String, year:Int=100)(implicit ec: ExecutionContext):Future[Seq[Price]] =
@@ -97,25 +106,26 @@ object External {
       val format = new SimpleDateFormat("yyyyMMdd")
       YahooFinance.get(code, from, Interval.DAILY).getHistory.asScala.map{
         stock =>
-          Price(code, format.format(stock.getDate.getTime()), stock.getClose.toString, stock.getOpen.toString, stock.getHigh.toString, stock.getLow.toString, stock.getVolume.toString)
+          Price(code, format.format(stock.getDate.getTime()), stock.getClose, stock.getOpen, stock.getHigh, stock.getLow, stock.getVolume)
       }
     }
 
 
   def requestKoreaStocksNowPrice(stocks:Seq[Stock])(implicit ec: ExecutionContext):Future[Seq[NowPrice]] =
     Future{
+        println(stocks.size)
         val prices = YahooFinance.get(stocks.map(stock =>
           if(stock.market == Market.KOSPI || stock.market == Market.ETF) stock.code+".KS"
           else stock.code+".KQ").toArray)
         prices.asScala.values.map{stock =>
-      NowPrice(stock.getSymbol.split("\\.")(0), stock.getQuote.getPrice.toString, stock.getQuote.getChangeInPercent.toString)}.toSeq
+      NowPrice(stock.getSymbol.split("\\.")(0), stock.getQuote.getPrice, stock.getQuote.getChangeInPercent)}.toSeq
     }
 
   def requestUsaStocksNowPrice(stocks:Seq[Stock])(implicit ec: ExecutionContext):Future[Seq[NowPrice]] =
     Future{
       println(stocks.size)
       val prices = YahooFinance.get(stocks.map(stock =>stock.code).toArray)
-      prices.asScala.values.map(stock => NowPrice(stock.getSymbol, stock.getQuote.getPrice.toString, stock.getQuote.getChangeInPercent.toString)).toSeq
+      prices.asScala.values.map(stock => NowPrice(stock.getSymbol, stock.getQuote.getPrice, stock.getQuote.getChangeInPercent)).toSeq
     }
 
   def requestKrwUsds(year:Int=100)(implicit ec: ExecutionContext):Future[Seq[KrwUsd]] =
@@ -125,7 +135,7 @@ object External {
       val format = new SimpleDateFormat("yyyyMMdd")
       YahooFinance.get("USDKRW=X", from, Interval.DAILY).getHistory.asScala.withFilter(_.getClose != null).map{
         stock =>
-          KrwUsd(format.format(stock.getDate.getTime()), stock.getClose.toString)
+          KrwUsd(format.format(stock.getDate.getTime()), stock.getClose)
       }
     }
 
@@ -133,6 +143,6 @@ object External {
     Future {
       val data = YahooFinance.get("USDKRW=X")
       val format = new SimpleDateFormat("yyyyMMdd")
-      KrwUsd(format.format(Date.from(Instant.now)), data.getQuote.getPrice.toString)
+      KrwUsd(format.format(Date.from(Instant.now)), data.getQuote.getPrice)
     }
 }

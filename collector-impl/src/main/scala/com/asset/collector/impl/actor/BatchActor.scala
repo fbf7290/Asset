@@ -119,6 +119,7 @@ object BatchActor {
               }{
                 case Success(failList) =>
                   BatchResult{ Unit =>
+                    println(failList)
                     setKoreaStocksTimer
                     Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("한국 batch 성공", failList.toString, JsNull))
                     ()
@@ -166,6 +167,7 @@ object BatchActor {
               }{
                 case Success(failList) =>
                   BatchResult{ Unit =>
+                    println(failList)
                     setUsaStocksTimer
                     Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("미국 batch 성공", failList.toString, JsNull))
                     ()

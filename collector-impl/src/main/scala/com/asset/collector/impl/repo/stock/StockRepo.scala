@@ -44,7 +44,7 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
     session.executeWrite(s"DELETE FROM ${country}_stock where ignored='1' and code='${stock.code}'")
 
   override def createPriceTable(country: Country): Future[Done] =
-    session.executeCreateTable(s"create table if not exists ${country}_price (code TEXT, date TEXT, close TEXT, open TEXT, low TEXT, high TEXT, volume TEXT, PRIMARY KEY(code, date)) WITH CLUSTERING ORDER BY (date DESC)")
+    session.executeCreateTable(s"create table if not exists ${country}_price (code TEXT, date TEXT, close DECIMAL, open DECIMAL, low DECIMAL, high DECIMAL, volume bigint, PRIMARY KEY(code, date)) WITH CLUSTERING ORDER BY (date DESC)")
 
   override def selectLatestTimestamp(country: Country, code: String): Future[Option[String]] =
     session.selectOne(s"select date from ${country}_price where code='${code}").map(_.map(_.getString("data")))
@@ -60,11 +60,11 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
         batch.add(stmt.bind
           .setString("code", price.code)
           .setString("date", price.date)
-          .setString("close", price.close)
-          .setString("open", price.open)
-          .setString("low", price.low)
-          .setString("high", price.high)
-          .setString("volume", price.volume))
+          .setDecimal("close", price.close.bigDecimal)
+          .setDecimal("open", price.open.bigDecimal)
+          .setDecimal("low", price.low.bigDecimal)
+          .setDecimal("high", price.high.bigDecimal)
+          .setLong("volume", price.volume))
       }
       r <- session.executeWriteBatch(batch)
     } yield {
@@ -73,11 +73,11 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
   }
 
   override def createNowPriceTable(country: Country): Future[Done] =
-    session.executeCreateTable(s"create table if not exists ${country}_now_price (ignored TEXT, code TEXT, price TEXT, change_percent TEXT, PRIMARY KEY(ignored, code))")
+    session.executeCreateTable(s"create table if not exists ${country}_now_price (ignored TEXT, code TEXT, price DECIMAL, change_percent DECIMAL, PRIMARY KEY(ignored, code))")
 
   override def selectNowPrices(country: Country): Future[Seq[NowPrice]] =
     session.selectAll(s"select code, price from ${country}_now_price where ignored='1'")
-    .map(rows => rows.map(row => NowPrice(row.getString("code"), row.getString("price"), row.getString("change_percent"))))
+    .map(rows => rows.map(row => NowPrice(row.getString("code"), row.getDecimal("price"), row.getDecimal("change_percent"))))
 
   override def insertBatchNowPrice(country: Country, prices: Seq[NowPrice]): Future[Done] =  {
     for {
@@ -87,8 +87,8 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
         batch.add(stmt.bind
           .setString("code", price.code)
           .setString("ignored", "1")
-          .setString("price", price.price)
-          .setString("change_percent", price.changePercent))
+          .setDecimal("price", price.price.bigDecimal)
+          .setDecimal("change_percent", price.changePercent.bigDecimal))
       }
       r <- session.executeWriteBatch(batch)
     } yield {
@@ -97,7 +97,7 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
   }
 
   override def createKrwUsdTable: Future[Done] =
-    session.executeCreateTable(s"create table if not exists krw_usd (ignored TEXT, date TEXT, rate TEXT, PRIMARY KEY(ignored, date))")
+    session.executeCreateTable(s"create table if not exists krw_usd (ignored TEXT, date TEXT, rate DECIMAL, PRIMARY KEY(ignored, date))")
 
   override def insertBatchKrwUsd(krwUsds: Seq[KrwUsd]): Future[Done] = {
     for {
@@ -107,7 +107,7 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
         batch.add(stmt.bind
           .setString("ignored", "1")
           .setString("date", krwUsd.date)
-          .setString("rate", krwUsd.date))
+          .setDecimal("rate", krwUsd.rate.bigDecimal))
       }
       r <- session.executeWriteBatch(batch)
     } yield {

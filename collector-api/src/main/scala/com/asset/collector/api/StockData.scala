@@ -101,18 +101,18 @@ object Stock {
   implicit val format :Format[Stock]= Json.format
 }
 
-case class Price(code:String, date:String, close:String, open:String, high:String, low:String, volume:String)
+case class Price(code:String, date:String, close:BigDecimal, open:BigDecimal, high:BigDecimal, low:BigDecimal, volume:Long)
 object Price {
   implicit val format :Format[Price]= Json.format
 }
 
-case class NowPrice(code:String, price:String, changePercent:String)
+case class NowPrice(code:String, price:BigDecimal, changePercent:BigDecimal)
 object NowPrice {
   implicit val format :Format[NowPrice]= Json.format
 }
 
-case class KrwUsd(date:String, rate:String)
+case class KrwUsd(date:String, rate:BigDecimal)
 object KrwUsd{
-  def empty = KrwUsd("", "1150")
+  def empty = KrwUsd("", BigDecimal(1150))
   implicit val format :Format[KrwUsd]= Json.format
 }
