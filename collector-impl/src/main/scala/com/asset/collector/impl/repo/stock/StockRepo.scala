@@ -4,7 +4,7 @@ import akka.Done
 import cats.data.OptionT
 import cats.instances.future._
 import com.asset.collector.api.Country.Country
-import com.asset.collector.api.{Market, NowPrice, Price, Stock}
+import com.asset.collector.api.{KrwUsd, Market, NowPrice, Price, Stock}
 import com.lightbend.lagom.scaladsl.persistence.cassandra.CassandraSession
 import com.datastax.driver.core.BatchStatement
 
@@ -89,6 +89,25 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
           .setString("ignored", "1")
           .setString("price", price.price)
           .setString("change_percent", price.changePercent))
+      }
+      r <- session.executeWriteBatch(batch)
+    } yield {
+      r
+    }
+  }
+
+  override def createKrwUsdTable: Future[Done] =
+    session.executeCreateTable(s"create table if not exists krw_usd (ignored TEXT, date TEXT, rate TEXT, PRIMARY KEY(ignored, date))")
+
+  override def insertBatchKrwUsd(krwUsds: Seq[KrwUsd]): Future[Done] = {
+    for {
+      stmt <- session.prepare(s"INSERT INTO krw_usd (ignored, date, rate) VALUES (?, ?, ?)")
+      batch = new BatchStatement
+      _ = krwUsds.map { krwUsd =>
+        batch.add(stmt.bind
+          .setString("ignored", "1")
+          .setString("date", krwUsd.date)
+          .setString("rate", krwUsd.date))
       }
       r <- session.executeWriteBatch(batch)
     } yield {

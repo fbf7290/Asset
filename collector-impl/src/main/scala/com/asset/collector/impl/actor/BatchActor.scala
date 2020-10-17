@@ -19,6 +19,7 @@ import com.asset.collector.api.Market.Market
 import com.asset.collector.impl.Fcm
 import com.asset.collector.impl.Fcm.FcmMessage
 import com.asset.collector.impl.acl.External
+import com.asset.collector.impl.actor.BatchActor.Command
 import play.api.libs.json.JsNull
 
 import scala.collection.mutable
@@ -36,7 +37,8 @@ object BatchActor {
   case class CollectUsaStock(code:String, replyTo:ActorRef[Response]) extends Command
   case class CollectKoreaStocks(replyTo:Option[ActorRef[Reply.type]]) extends Command
   case class CollectUsaStocks(replyTo:Option[ActorRef[Reply.type]]) extends Command
-  case class SuccessStockListBatch(country: Country) extends Command
+  case class CollectKrwUsd(replyTo:Option[ActorRef[Reply.type]]) extends Command
+  case class BatchResult(func: Unit => Unit) extends Command
 
   sealed trait Response
   case object Reply extends Response
@@ -50,12 +52,16 @@ object BatchActor {
       Behaviors.withStash(20){ buffer =>
         Behaviors.withTimers[Command] { timers =>
 
-          def setDailyTimer(msg: Command, plusHours: Int) = {
+          def setNextDayTimer(msg: Command, plusHours: Int) = {
             val zoneId = ZoneId.of("UTC+09:00")
             val now = ZonedDateTime.now(zoneId)
             val after = now.plusDays(1).truncatedTo(ChronoUnit.DAYS).plusHours(plusHours)
             timers.startSingleTimer(msg, msg, (after.toEpochSecond - now.toEpochSecond).seconds)
           }
+
+          def setKoreaStocksTimer = setNextDayTimer(CollectKoreaStocks(None), 0)
+          def setUsaStocksTimer = setNextDayTimer(CollectUsaStocks(None), 8)
+          def setKrwUsdsTimer = setNextDayTimer(CollectKrwUsd(None), 9)
 
           def refreshStockList(country: Country, nowStocks:Set[Stock]) =
             for {
@@ -64,10 +70,9 @@ object BatchActor {
               _ <-  (stocks -- nowStocks).map(stock => StockRepoAccessor.deleteStock[Future](country, stock)).toList.sequence
             } yield {}
 
-
-          setDailyTimer(CollectKoreaStocks(None), 0)
-          setDailyTimer(CollectUsaStocks(None), 8)
-
+          setKoreaStocksTimer
+          setUsaStocksTimer
+          setKrwUsdsTimer
 
           def ing:Behavior[Command] = Behaviors.receiveMessage {
             case CollectKoreaStock(code, replyTo) =>
@@ -88,17 +93,15 @@ object BatchActor {
               Behaviors.same
 
             case CollectKoreaStocks(replyTo) =>
-              replyTo.map(_.tell(Reply))
-              context.pipeToSelf {
+              context.pipeToSelf{
                 for{
                   nowStocksList <- Future.sequence(Set(External.requestKoreaEtfStockList,
                     External.requestKoreaMarketStockList(Market.KOSPI),
                     External.requestKoreaMarketStockList(Market.KOSDAQ)))
                   nowStocks = nowStocksList.foldLeft(Set.empty[Stock])((r, stocks) => r ++ stocks)
                   _ <- refreshStockList(Country.KOREA, nowStocks).run(stockDb)
-                } yield {
-                  val failList = ListBuffer.empty[String]
-                  Source(nowStocks).zipWithIndex.mapAsync(8) { case (stock, index) =>
+                  failList = ListBuffer.empty[String]
+                  _ <- Source(nowStocks).zipWithIndex.mapAsync(8) { case (stock, index) =>
                     println(s"${index} ${stock}")
                     External.requestKoreaStockPrice(stock.code).map(prices=>(index, prices)).recover{case _ =>
                       failList += stock.code
@@ -109,19 +112,28 @@ object BatchActor {
                     StockRepoAccessor.insertBatchPrice[Future](Country.KOREA, prices).run(stockDb).recover{case _ =>
                       prices.headOption.foreach(price => failList += price.code)
                     }
-                  }.runWith(Sink.ignore).onComplete{
-                    case Success(_) => Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("한국 batch 성공", failList.toString, JsNull))
-                    case Failure(exception) => Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("한국 batch 실패", exception.getMessage, JsNull))
-                  }
+                  }.runWith(Sink.ignore)
+                } yield {
+                  failList
                 }
               }{
-                case Success(_) => SuccessStockListBatch(Country.KOREA)
-                case Failure(exception) => throw exception
-              }
-              stash
-            case CollectUsaStocks(replyTo) =>
+                case Success(failList) =>
+                  BatchResult{ Unit =>
+                    setKoreaStocksTimer
+                    Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("한국 batch 성공", failList.toString, JsNull))
+                    ()
+                  }
+                case Failure(exception) =>
+                  BatchResult{ Unit =>
+                    timers.startSingleTimer(CollectKoreaStocks(None), CollectKoreaStocks(None), 10.seconds)
+                    Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("한국 batch 실패", exception.getMessage, JsNull))
+                    ()
+                  }
+               }
               replyTo.map(_.tell(Reply))
-              context.pipeToSelf {
+              Behaviors.same
+            case CollectUsaStocks(replyTo) =>
+              context.pipeToSelf{
                 for{
                   dumbStocks <- Future.sequence(Set(External.requestUsaMarketStockList(Market.NASDAQ),
                     External.requestUsaMarketStockList(Market.NYSE),
@@ -135,9 +147,8 @@ object BatchActor {
                   nowStocks = finnHubStocks.withFilter(stock => marketMap.contains(stock.code))
                     .map(stock=> stock.setMarket(marketMap.get(stock.code).get))
                   _ <- refreshStockList(Country.USA, nowStocks.toSet).run(stockDb)
-                } yield {
-                  val failList = ListBuffer.empty[String]
-                  Source(nowStocks.toList).zipWithIndex.mapAsync(8) { case (stock, index) =>
+                  failList = ListBuffer.empty[String]
+                  _ <- Source(nowStocks.toList).zipWithIndex.mapAsync(8) { case (stock, index) =>
                     println(s"${index} ${stock}")
                     External.requestUsaStockPrice(stock.code).map(prices=>(index, prices)).recover{case _ =>
                       failList += stock.code
@@ -148,31 +159,52 @@ object BatchActor {
                     StockRepoAccessor.insertBatchPrice[Future](Country.USA, prices).run(stockDb).recover{case _ =>
                       prices.headOption.foreach(price => failList += price.code)
                     }
-                  }.runWith(Sink.ignore).onComplete{
-                    case Success(_) => Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("미국 batch 성공", failList.toString, JsNull))
-                    case Failure(exception) =>
-                      println(exception)
-                      Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("미국 batch 실패", exception.getMessage, JsNull))
-                  }
+                  }.runWith(Sink.ignore)
+                } yield {
+                  failList
                 }
               }{
-                case Success(_) => SuccessStockListBatch(Country.USA)
-                case Failure(exception) => throw exception
+                case Success(failList) =>
+                  BatchResult{ Unit =>
+                    setUsaStocksTimer
+                    Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("미국 batch 성공", failList.toString, JsNull))
+                    ()
+                  }
+                case Failure(exception) =>
+                  BatchResult{ Unit =>
+                    timers.startSingleTimer(CollectUsaStocks(None), CollectUsaStocks(None), 10.seconds)
+                    Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("미국 batch 실패", exception.getMessage, JsNull))
+                    ()
+                  }
               }
-              stash
-            case _ =>
+              replyTo.map(_.tell(Reply))
               Behaviors.same
-          }
+            case CollectKrwUsd(replyTo) =>
+              replyTo.map(_.tell(Reply))
+              context.pipeToSelf{
+                External.requestKrwUsds().flatMap{ krwUsds =>
+                  StockRepoAccessor.insertBatchKrwUsd[Future](krwUsds).run(stockDb)
+                }
+              }{
+                case Success(_) =>
+                   BatchResult{ Unit =>
+                    setKrwUsdsTimer
+                    Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("환율 batch 성공", "", JsNull))
+                    ()
+                  }
+                case Failure(exception) =>
+                   BatchResult{ Unit =>
+                    timers.startSingleTimer(CollectKrwUsd(None), CollectKrwUsd(None), 10.seconds)
+                    Fcm.sendFcmMsg(List(CollectorSettings.adminFcmRegistrationId), FcmMessage("환율 batch 실패", exception.getMessage, JsNull))
+                     ()
+                  }
 
-          def stash:Behavior[Command] = Behaviors.receiveMessage {
-            case SuccessStockListBatch(country) =>
-              country match {
-                case Country.KOREA => setDailyTimer(CollectKoreaStocks(None), 0)
-                case Country.USA => setDailyTimer(CollectUsaStocks(None), 8)
               }
-              buffer.unstashAll(ing)
-            case other =>
-              buffer.stash(other)
+              Behaviors.same
+            case BatchResult(func) =>
+              func(Unit)
+              Behaviors.same
+            case _ =>
               Behaviors.same
           }
           ing
@@ -182,3 +214,5 @@ object BatchActor {
   }
 
 }
+
+

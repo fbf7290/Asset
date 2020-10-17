@@ -3,7 +3,7 @@ package com.asset.collector.impl.repo.stock
 import akka.Done
 import com.asset.collector.api.Country.Country
 import com.asset.collector.api.Market.Market
-import com.asset.collector.api.{NowPrice, Price, Stock}
+import com.asset.collector.api.{KrwUsd, NowPrice, Price, Stock}
 
 
 trait StockRepoTrait[F[_]] {
@@ -21,4 +21,7 @@ trait StockRepoTrait[F[_]] {
   def createNowPriceTable(country: Country):F[Done]
   def selectNowPrices(country: Country):F[Seq[NowPrice]]
   def insertBatchNowPrice(country: Country, prices:Seq[NowPrice]):F[Done]
+
+  def createKrwUsdTable:F[Done]
+  def insertBatchKrwUsd(krwUsds:Seq[KrwUsd]):F[Done]
 }

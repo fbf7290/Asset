@@ -64,7 +64,8 @@ abstract class CollectorApplication(context: LagomApplicationContext)
       StockRepoAccessor.createNowPriceTable(Country.KOREA).run(stockDb) zip
       StockRepoAccessor.createNowPriceTable(Country.USA).run(stockDb) zip
       StockRepoAccessor.createPriceTable(Country.KOREA).run(stockDb) zip
-      StockRepoAccessor.createPriceTable(Country.USA).run(stockDb))
+      StockRepoAccessor.createPriceTable(Country.USA).run(stockDb) zip
+      StockRepoAccessor.createKrwUsdTable.run(stockDb))
       .map{_ =>
         serviceClient.implement[CollectorService].insertKoreaStockPrice("005930").invoke(NotUsed).recover{case _ => ()}
         Done}

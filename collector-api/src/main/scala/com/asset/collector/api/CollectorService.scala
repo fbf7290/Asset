@@ -15,12 +15,14 @@ trait CollectorService extends Service{
 
   def getKoreaNowPrices: ServiceCall[NotUsed, Map[String, NowPrice]]
   def getUsaNowPrices: ServiceCall[NotUsed, Map[String, NowPrice]]
+  def getNowKrwUsd: ServiceCall[NotUsed, KrwUsd]
 
   def insertKoreaStockPrice(code:String): ServiceCall[NotUsed, Done]
   def insertUsaStockPrice(code:String): ServiceCall[NotUsed, Done]
 
   def requestBatchKoreaStock: ServiceCall[NotUsed, Done]
   def requestBatchUsaStock: ServiceCall[NotUsed, Done]
+  def requestBatchKrwUsd: ServiceCall[NotUsed, Done]
 
 
   override def descriptor: Descriptor ={
@@ -35,12 +37,14 @@ trait CollectorService extends Service{
 
         restCall(Method.GET, "/stock/korea/prices", getKoreaNowPrices),
         restCall(Method.GET, "/stock/usa/prices", getUsaNowPrices),
+        restCall(Method.GET, "/krwusd", getNowKrwUsd),
 
         restCall(Method.POST, "/stock/korea/batch", requestBatchKoreaStock),
         restCall(Method.POST, "/stock/usa/batch", requestBatchUsaStock),
 
         restCall(Method.POST, "/stock/korea/insert/price/:code", insertKoreaStockPrice _),
         restCall(Method.POST, "/stock/usa/insert/price/:code", insertUsaStockPrice _),
+        restCall(Method.POST, "/krwusd/batch", requestBatchKrwUsd _),
       ).withAutoAcl(true)
       .withExceptionSerializer(new ClientExceptionSerializer(Environment.simple()))
 

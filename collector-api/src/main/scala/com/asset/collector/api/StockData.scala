@@ -110,3 +110,9 @@ case class NowPrice(code:String, price:String, changePercent:String)
 object NowPrice {
   implicit val format :Format[NowPrice]= Json.format
 }
+
+case class KrwUsd(date:String, rate:String)
+object KrwUsd{
+  def empty = KrwUsd("", "1150")
+  implicit val format :Format[KrwUsd]= Json.format
+}

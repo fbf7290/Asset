@@ -1,11 +1,13 @@
 package com.asset.collector.impl.acl
 
 import java.text.SimpleDateFormat
-import java.util.Calendar
+import java.time.Instant
+import java.util.{Calendar, Date}
 
 import com.asset.collector.api.Exception.ExternalResourceException
 import com.asset.collector.api.Market.Market
-import com.asset.collector.api.{DumbStock, FinnHubStock, Market, NaverEtfListResponse, NowPrice, Price, Stock}
+import com.asset.collector.api.{DumbStock, FinnHubStock, KrwUsd, Market, NaverEtfListResponse, NowPrice, Price, Stock}
+import com.ktmet.asset.common.api.Timestamp
 import org.jsoup.Jsoup
 import play.api.libs.json.Json
 import play.api.libs.ws.WSClient
@@ -114,5 +116,23 @@ object External {
       println(stocks.size)
       val prices = YahooFinance.get(stocks.map(stock =>stock.code).toArray)
       prices.asScala.values.map(stock => NowPrice(stock.getSymbol, stock.getQuote.getPrice.toString, stock.getQuote.getChangeInPercent.toString)).toSeq
+    }
+
+  def requestKrwUsds(year:Int=100)(implicit ec: ExecutionContext):Future[Seq[KrwUsd]] =
+    Future{
+      val from = Calendar.getInstance()
+      from.add(Calendar.YEAR, -1*year)
+      val format = new SimpleDateFormat("yyyyMMdd")
+      YahooFinance.get("USDKRW=X", from, Interval.DAILY).getHistory.asScala.withFilter(_.getClose != null).map{
+        stock =>
+          KrwUsd(format.format(stock.getDate.getTime()), stock.getClose.toString)
+      }
+    }
+
+  def requestNowKrwUsd(implicit ec: ExecutionContext):Future[KrwUsd] =
+    Future {
+      val data = YahooFinance.get("USDKRW=X")
+      val format = new SimpleDateFormat("yyyyMMdd")
+      KrwUsd(format.format(Date.from(Instant.now)), data.getQuote.getPrice.toString)
     }
 }

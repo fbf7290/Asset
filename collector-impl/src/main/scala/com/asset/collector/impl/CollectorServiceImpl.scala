@@ -1,13 +1,15 @@
 package com.asset.collector.impl
 
 import java.nio.file.Paths
-import java.util.Calendar
+import java.text.SimpleDateFormat
+import java.time.Instant
+import java.util.{Calendar, Date}
 
 import akka.actor.ActorSystem
 import akka.actor.typed.SupervisorStrategy
 import akka.{Done, NotUsed}
 import akka.util.{ByteString, Timeout}
-import com.asset.collector.api.{CollectorService, CollectorSettings, Country, FinnHubStock, Market, NaverEtfListResponse, NowPrice, Price, Stock, Test}
+import com.asset.collector.api.{CollectorService, CollectorSettings, Country, FinnHubStock, KrwUsd, Market, NaverEtfListResponse, NowPrice, Price, Stock, Test}
 import com.asset.collector.impl.repo.stock.{StockRepo, StockRepoAccessor}
 import com.lightbend.lagom.scaladsl.api.ServiceCall
 import com.lightbend.lagom.scaladsl.api.transport.ResponseHeader
@@ -101,6 +103,7 @@ class CollectorServiceImpl(val system: ActorSystem
           StockRepoAccessor.selectNowPrices(Country.KOREA).run(stockDb)
             .map(prices => prices.foldLeft(mutable.Map.empty[String,NowPrice])((map, price) => map + (price.code -> price)))
             .map(prices => (ResponseHeader.Ok.withStatus(200), prices.toMap))
+        case _ => ???
       }
   }
 
@@ -112,6 +115,20 @@ class CollectorServiceImpl(val system: ActorSystem
           StockRepoAccessor.selectNowPrices(Country.USA).run(stockDb)
             .map(prices => prices.foldLeft(mutable.Map.empty[String,NowPrice])((map, price) => map + (price.code -> price)))
             .map(prices => (ResponseHeader.Ok.withStatus(200), prices.toMap))
+        case _ => ???
       }
+  }
+
+  override def getNowKrwUsd: ServiceCall[NotUsed, KrwUsd] = ServerServiceCall{ (_, _) =>
+    nowPriceActor.ask[NowPriceActor.Response](reply => NowPriceActor.GetKrwUsd(reply))
+      .collect{
+        case NowPriceActor.KrwUsdResponse(krwUsd) => (ResponseHeader.Ok.withStatus(200), krwUsd)
+        case NowPriceActor.Initializing => (ResponseHeader.Ok.withStatus(200), KrwUsd.empty)
+      }
+  }
+
+  override def requestBatchKrwUsd: ServiceCall[NotUsed, Done] = ServerServiceCall { (_, _) =>
+    batchActor.ask[BatchActor.Reply.type](reply => BatchActor.CollectKrwUsd(Some(reply)))
+      .map(_ => (ResponseHeader.Ok.withStatus(200), Done))
   }
 }
