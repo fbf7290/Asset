@@ -6,7 +6,7 @@ import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import akka.util.Timeout
-import com.asset.collector.api.{CollectorService, NowPrice, Stock}
+import com.asset.collector.api.{CollectorService, KrwUsd, NowPrice, Stock}
 import com.ktmet.asset.api.{AssetService, AutoCompleteMessage}
 import com.lightbend.lagom.scaladsl.api.ServiceCall
 import play.api.libs.ws.WSClient
@@ -57,4 +57,12 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
     }
   }
 
+  override def getNowKrwUsd: ServiceCall[NotUsed, KrwUsd] = authenticate { _ =>
+    ServerServiceCall{ (_,_) =>
+      nowPriceActor.ask[NowPriceActor.Response](reply => NowPriceActor.GetKrwUsd(reply))
+        .collect{
+          case NowPriceActor.KrwUsdResponse(krwUsd) => (ResponseHeader.Ok.withStatus(200), krwUsd)
+        }
+    }
+  }
 }
