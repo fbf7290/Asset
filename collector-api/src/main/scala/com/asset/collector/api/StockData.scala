@@ -1,5 +1,6 @@
 package com.asset.collector.api
 
+import com.asset.collector.api.Country.Country
 import com.asset.collector.api.Market.Market
 import play.api.libs.json.{Format, JsPath, JsResult, JsValue, Json, Reads, Writes}
 import play.api.libs.functional.syntax._
@@ -81,7 +82,7 @@ object Market extends Enumeration {
 }
 
 
-case class Stock(market:Market, name:String, code:String){
+case class Stock(market:Market, name:String, code:String) {
   override def canEqual(a: Any) = a.isInstanceOf[Stock]
 
   override def equals(that: Any): Boolean =
