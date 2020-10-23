@@ -5,7 +5,7 @@ import akka.cluster.sharding.typed.scaladsl.Entity
 import akka.util.Timeout
 import com.asset.collector.api.CollectorService
 import com.ktmet.asset.api.AssetService
-import com.ktmet.asset.impl.entity.UserEntity
+import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
 import com.lightbend.lagom.scaladsl.akka.discovery.AkkaDiscoveryComponents
 import com.lightbend.lagom.scaladsl.devmode.LagomDevModeComponents
 import com.lightbend.lagom.scaladsl.persistence.cassandra.CassandraPersistenceComponents
@@ -38,7 +38,7 @@ abstract class AssetApplication(context: LagomApplicationContext)
   implicit lazy val timeout:Timeout = Timeout(10.seconds)
 
   override lazy val jsonSerializerRegistry = new JsonSerializerRegistry {
-    override def serializers  = UserEntity.serializers
+    override def serializers  = UserEntity.serializers ++ PortfolioEntity.serializers
   }
   clusterSharding.init(
     Entity(UserEntity.typeKey) { entityContext =>
