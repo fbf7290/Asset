@@ -5,9 +5,9 @@ import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, EntityRef}
 import akka.util.Timeout
 import play.api.libs.ws.WSClient
 import akka.actor.typed.scaladsl.adapter._
-import com.ktmet.asset.api.{AssetService, AssetSettings}
+import com.ktmet.asset.api.{AssetService, AssetSettings, PortfolioId, UserId}
 import com.ktmet.asset.common.api.AuthorizationException
-import com.ktmet.asset.impl.entity.UserEntity
+import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
 import com.lightbend.lagom.scaladsl.api.transport.RequestHeader
 import pdi.jwt.{JwtAlgorithm, JwtJson}
 import pdi.jwt.exceptions.JwtExpirationException
@@ -26,8 +26,19 @@ trait ImplBase extends AssetService{
   implicit  val typedSystem = system.toTyped
 
 
+  protected def userEntityRef(userId: UserId): EntityRef[UserEntity.Command] =
+    clusterSharding.entityRefFor(UserEntity.typeKey, userId.value)
+
   protected def userEntityRef(userId: String): EntityRef[UserEntity.Command] =
     clusterSharding.entityRefFor(UserEntity.typeKey, userId)
+
+
+  protected def portfolioEntityRef(portfolioId: String): EntityRef[PortfolioEntity.Command] =
+    clusterSharding.entityRefFor(PortfolioEntity.typeKey, portfolioId)
+
+  protected def portfolioEntityRef(portfolioId: PortfolioId): EntityRef[PortfolioEntity.Command] =
+    clusterSharding.entityRefFor(PortfolioEntity.typeKey, portfolioId.value)
+
 
 }
 

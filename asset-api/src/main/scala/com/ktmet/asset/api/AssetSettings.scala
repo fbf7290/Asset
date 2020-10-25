@@ -32,4 +32,9 @@ object AssetSettings {
     case None => "https://kapi.kakao.com"
   }
 
+  val defaultMaxPortfolioSize = sys.env.get("DEFAULT_MAX_PORTFOLIO_SIZE") match {
+    case Some(value) => value.toInt
+    case None => 2   // 유저 최대 포트폴리오 개수
+  }
+
 }

@@ -2,6 +2,7 @@ package com.ktmet.asset.api
 
 import akka.{Done, NotUsed}
 import com.asset.collector.api.{KrwUsd, NowPrice, Stock}
+import com.ktmet.asset.api.message.{CreatingPortfolioMessage, LoginMessage, PortfolioCreatedMessage, RefreshingTokenMessage, SocialLoggingInMessage, TimestampMessage, TokenMessage, UserMessage}
 import com.ktmet.asset.common.api.ClientExceptionSerializer
 import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Descriptor, Service, ServiceAcl, ServiceCall}
@@ -16,12 +17,16 @@ trait AssetService extends Service{
   def logout: ServiceCall[NotUsed, Done]
   def deleteUser: ServiceCall[NotUsed, Done]
   def refreshToken: ServiceCall[RefreshingTokenMessage, TokenMessage]
-  def getUser: ServiceCall[NotUsed, UserState]
+  def getUser: ServiceCall[NotUsed, UserMessage]
 
 
   def autoCompleteStock(prefix:String): ServiceCall[NotUsed, AutoCompleteMessage]
   def getNowPrice(code:String): ServiceCall[NotUsed, NowPrice]
   def getNowKrwUsd: ServiceCall[NotUsed, KrwUsd]
+
+  def createPortfolio: ServiceCall[CreatingPortfolioMessage, PortfolioCreatedMessage]
+  def deletePortfolio(portfolioId: String): ServiceCall[NotUsed, Done]
+  def getPortfolio(portfolioId: String): ServiceCall[NotUsed, PortfolioState]
 
 
   override def descriptor: Descriptor = {
@@ -40,7 +45,13 @@ trait AssetService extends Service{
         restCall(Method.GET, "/stock/now/:code", getNowPrice _),
         restCall(Method.GET, "/krwusd1", getNowKrwUsd _),
 
+        restCall(Method.POST, "/portfolio", createPortfolio),
+        restCall(Method.DELETE, "/portfolio/:portfolioId", deletePortfolio _),
+        restCall(Method.GET, "/portfolio/:portfolioId", getPortfolio _)
+
       ).withAutoAcl(true)
       .withExceptionSerializer(new ClientExceptionSerializer(Environment.simple()))
   }
+
+
 }

@@ -55,13 +55,13 @@ trait Authenticator {
       }
 
 
-  def authenticated[Request, Response](requestHeader: RequestHeader, serviceCall: String => ServerServiceCall[Request, Response]) ={
+  def authenticated[Request, Response](requestHeader: RequestHeader, serviceCall: UserId => ServerServiceCall[Request, Response]) ={
     val token = extractJwtToken(requestHeader)
     val userId = extractJwtClaim(token) match {
       case Right(claim) => claim.userId
       case Left(exception) => throw exception
     }
-    funcIfTokenMatch[ServerServiceCall[Request, Response]](userId, token.get, {Future.successful(serviceCall(userId))})
+    funcIfTokenMatch[ServerServiceCall[Request, Response]](userId, token.get, {Future.successful(serviceCall(UserId(userId)))})
   }
 
 }

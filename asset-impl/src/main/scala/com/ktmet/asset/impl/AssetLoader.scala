@@ -40,9 +40,16 @@ abstract class AssetApplication(context: LagomApplicationContext)
   override lazy val jsonSerializerRegistry = new JsonSerializerRegistry {
     override def serializers  = UserEntity.serializers ++ PortfolioEntity.serializers
   }
+
   clusterSharding.init(
     Entity(UserEntity.typeKey) { entityContext =>
       UserEntity(entityContext)
+    }
+  )
+
+  clusterSharding.init(
+    Entity(PortfolioEntity.typeKey) { entityContext =>
+      PortfolioEntity(entityContext)
     }
   )
 

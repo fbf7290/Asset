@@ -2,7 +2,8 @@ package com.ktmet.asset.impl
 
 import akka.{Done, NotUsed}
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
-import com.ktmet.asset.api.{AssetSettings, LoginMessage, RefreshingTokenMessage, SocialLoggingInMessage, Token, TokenMessage, UserId, UserState}
+import com.ktmet.asset.api.message.{CreatingPortfolioMessage, LoginMessage, PortfolioCreatedMessage, RefreshingTokenMessage, SocialLoggingInMessage, TokenMessage, UserMessage}
+import com.ktmet.asset.api.{AssetSettings, Token, UserId, UserState}
 import com.ktmet.asset.common.api.Exception.NotFoundException
 import com.ktmet.asset.impl.entity.UserEntity
 import com.ktmet.asset.impl.internal.{Authenticator, ImplBase}
@@ -17,7 +18,7 @@ trait UserServiceImplPart extends ImplBase with Authenticator {
 
 
   def authenticate[Request, Response](
-                                        serviceCall: String => ServerServiceCall[Request, Response]
+                                        serviceCall: UserId => ServerServiceCall[Request, Response]
                                       ) = ServerServiceCall.composeAsync { requestHeader =>
     authenticated[Request, Response](requestHeader,  serviceCall)
   }
@@ -49,10 +50,10 @@ trait UserServiceImplPart extends ImplBase with Authenticator {
       val (socialType, socialToken) = (socialLoggingInMessage.socialType, socialLoggingInMessage.socialToken)
       this.getSocialId(socialType, socialToken).flatMap{
         case Some(socialId) =>
-          val userId = UserId(socialType, socialId)
+          val userId = UserId(UserId.userIdFormat(socialType, socialId))
           userEntityRef(userId.toString)
             .ask[UserEntity.TokenResponse](reply => UserEntity.LogIn(userId, reply))
-            .map(token => (ResponseHeader.Ok.withStatus(201),LoginMessage(userId.toString, token.accessToken, token.refreshToken.get)))
+            .map(token => (ResponseHeader.Ok.withStatus(201),LoginMessage(userId.value, token.accessToken, token.refreshToken.get)))
         case None => throw new NotFoundException
       }
     }
@@ -90,14 +91,17 @@ trait UserServiceImplPart extends ImplBase with Authenticator {
         }
     }
 
-  override def getUser: ServiceCall[NotUsed, UserState] = authenticate{ userId =>
+  override def getUser: ServiceCall[NotUsed, UserMessage] = authenticate{ userId =>
     ServerServiceCall{ (_,_) =>
       userEntityRef(userId)
         .ask[UserEntity.Response](reply => UserEntity.GetUser(reply))
         .collect{
-          case m:UserEntity.UserResponse => (ResponseHeader.Ok.withStatus(200), m.userState)
+          case UserEntity.UserResponse(userState) => (ResponseHeader.Ok.withStatus(200)
+            , UserMessage(userState.userId.value, userState.portfolios.map(_.value)))
           case UserEntity.NoUserException => throw UserEntity.NoUserException
         }
     }
   }
+
+
 }

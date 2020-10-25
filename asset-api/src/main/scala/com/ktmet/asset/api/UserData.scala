@@ -3,33 +3,26 @@ package com.ktmet.asset.api
 import play.api.libs.json.{Format, Json}
 
 
+case class UserId(value: String){
+  override def toString: String = value
+  override def canEqual(a: Any) = a.isInstanceOf[UserId]
 
-case class SocialLoggingInMessage(socialType:String, socialToken:String)
-object SocialLoggingInMessage{
-  implicit val format:Format[SocialLoggingInMessage] = Json.format
-}
-case class LoginMessage(userId:String, accessToken:String, refreshToken:String)
-object LoginMessage{
-  implicit val format:Format[LoginMessage] = Json.format
-}
+  override def equals(that: Any): Boolean =
+    that match {
+      case that: UserId =>
+        that.canEqual(this) && this.hashCode == that.hashCode
+      case _ => false
+    }
 
-case class TokenMessage(accessToken:String, refreshToken:Option[String])
-object TokenMessage{
-  implicit val format:Format[TokenMessage] = Json.format
-}
-case class RefreshingTokenMessage(userId:String, accessToken:String, refreshToken:String)
-object RefreshingTokenMessage{
-  implicit val format:Format[RefreshingTokenMessage] = Json.format
-}
-
-
-
-case class UserId(socialType:String, socialId:String){
-  override def toString: String = s"${socialType}_${socialId}"
+  override def hashCode:Int = {
+    value.hashCode
+  }
 }
 object UserId{
   implicit val format:Format[UserId] = Json.format
-  def empty:UserId = UserId("","")
+
+  def userIdFormat(socialType:String, socialId:String) = s"${socialType}_${socialId}"
+  def empty:UserId = UserId("")
 }
 
 case class Token(accessToken:String, refreshToken:String){
@@ -44,14 +37,16 @@ object Token{
   implicit val format:Format[Token] = Json.format
 }
 
-case class UserState(userId:UserId, tokens:List[Token]){
+case class UserState(userId:UserId, tokens:List[Token], portfolios: List[PortfolioId], maxPortfolioSize: Int){
   def loggedIn(token:Token) = copy(tokens = token::tokens take AssetSettings.tokenListSize)
   def loggedOut(accessToken:String) = copy(tokens = tokens.filterNot(_==accessToken))
   def containToken(accessToken:String):Boolean = tokens.contains(accessToken)
   def containToken(token:Token):Boolean = tokens.contains(token)
   def refreshToken(lastToken:Token, newToken:Token) = copy(tokens= newToken :: tokens.filterNot(_==lastToken))
+  def addPortfolio(portfolioId: PortfolioId) = copy(portfolios = portfolioId :: portfolios)
+  def deletePortfolio(portfolioId: PortfolioId) = copy(portfolios = portfolios.filterNot(_ == portfolioId))
 }
 object UserState{
   implicit val format:Format[UserState] = Json.format
-  def empty:UserState = UserState(UserId.empty, List.empty)
+  def empty:UserState = UserState(UserId.empty, List.empty, List.empty, AssetSettings.defaultMaxPortfolioSize)
 }

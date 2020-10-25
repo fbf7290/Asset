@@ -4,7 +4,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import akka.cluster.sharding.typed.scaladsl.{EntityContext, EntityTypeKey}
 import akka.persistence.typed.PersistenceId
 import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, ReplyEffect, RetentionCriteria}
-import com.ktmet.asset.api.{AssetSettings, Token, UserId, UserState}
+import com.ktmet.asset.api.{AssetSettings, PortfolioId, Token, UserId, UserState}
 import com.ktmet.asset.common.api.{ClientException, Timestamp}
 import com.lightbend.lagom.scaladsl.persistence.{AggregateEvent, AggregateEventShards, AggregateEventTag, AggregateEventTagger, AkkaTaggerAdapter}
 import com.lightbend.lagom.scaladsl.playjson.JsonSerializer
@@ -18,17 +18,17 @@ import scala.util.Success
 
 object UserEntity {
 
-  trait CommandSerializable
-  sealed trait Command extends CommandSerializable
+  sealed trait Command
   case class LogIn(userId:UserId, replyTo:ActorRef[TokenResponse]) extends Command
   case class LogOut(accessToken:String, replyTo:ActorRef[Response]) extends Command
   case class DeleteUser(replyTo:ActorRef[Response]) extends Command
   case class ContainToken(accessToken:String, replyTo:ActorRef[Response]) extends Command
   case class RefreshToken(token:Token, replyTo:ActorRef[Response]) extends Command
   case class GetUser(replyTo:ActorRef[Response]) extends Command
+  case class AddPortfolio(portfolioId: PortfolioId, replyTo:ActorRef[Response]) extends Command
+  case class DeletePortfolio(portfolioId: PortfolioId, replyTo:ActorRef[Response]) extends Command
 
-  trait ResponseSerializable
-  sealed trait Response extends ResponseSerializable
+  sealed trait Response
 
   case object Yes extends Response
   case object No extends Response
@@ -37,8 +37,8 @@ object UserEntity {
 
   case object NoUserException extends ClientException(404, "NoUserException", "User does not exist") with Response
   case object TokenException extends ClientException(401, "TokenException", "Check your token") with Response
-
-
+  case object TooManyPortfolioException extends ClientException(409, "TooManyPortfolioException", "Too many portfolio") with Response
+  case object NoPortfolioException extends ClientException(404, "NoPortfolioException", "Portfolio does not exist") with Response
 
   sealed trait Event extends AggregateEvent[Event] {
     override def aggregateTag: AggregateEventTagger[Event] = Event.Tag
@@ -67,6 +67,14 @@ object UserEntity {
   object TokenRefreshed{
     implicit val format:Format[TokenRefreshed] = Json.format
   }
+  case class PortfolioAdded(portfolioId: PortfolioId) extends Event
+  object PortfolioAdded{
+    implicit val format:Format[PortfolioAdded] = Json.format
+  }
+  case class PortfolioDeleted(portfolioId: PortfolioId) extends Event
+  object PortfolioDeleted{
+    implicit val format:Format[PortfolioDeleted] = Json.format
+  }
 
   val empty:UserEntity = UserEntity(None)
   val typeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("User")
@@ -93,6 +101,8 @@ object UserEntity {
     JsonSerializer[LoggedOut],
     JsonSerializer[UserDeleted],
     JsonSerializer[TokenRefreshed],
+    JsonSerializer[PortfolioAdded],
+    JsonSerializer[PortfolioDeleted],
     JsonSerializer[UserId],
     JsonSerializer[Token],
     JsonSerializer[UserState],
@@ -129,6 +139,8 @@ final case class UserEntity(userState:Option[UserState]) {
     case ContainToken(accessToken, replyTo) => onContainToken(accessToken, replyTo)
     case RefreshToken(token, replyTo) => onRefreshToken(token, replyTo)
     case GetUser(replyTo) => onGetUser(replyTo)
+    case AddPortfolio(portfolioId, replyTo) => onAddPortfolio(portfolioId, replyTo)
+    case DeletePortfolio(portfolioId, replyTo) => onDeletePortfolio(portfolioId, replyTo)
   }
 
 
@@ -175,6 +187,17 @@ final case class UserEntity(userState:Option[UserState]) {
     }
   private def onGetUser(replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
     funcWithUser(replyTo){state => Effect.reply(replyTo)(UserResponse(state))}
+  private def onAddPortfolio(portfolioId: PortfolioId, replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
+    funcWithUser(replyTo){ state =>
+      if(state.portfolios.size >= state.maxPortfolioSize) Effect.reply(replyTo)(TooManyPortfolioException)
+      else Effect.persist(PortfolioAdded(portfolioId)).thenReply(replyTo)(_ => Yes)
+    }
+  private def onDeletePortfolio(portfolioId: PortfolioId, replyTo: ActorRef[Response]): ReplyEffect[Event, UserEntity] =
+    funcWithUser(replyTo){ state =>
+      if(state.portfolios.contains(portfolioId)) Effect.persist(PortfolioDeleted(portfolioId)).thenReply(replyTo)(_ => Yes)
+      else Effect.reply(replyTo)(NoPortfolioException)
+    }
+
 
   def applyEvent(evt: Event): UserEntity = evt match {
     case UserCreated(userId, token) => onUserCreated(userId, token)
@@ -182,12 +205,18 @@ final case class UserEntity(userState:Option[UserState]) {
     case LoggedOut(_, accessToken) => onLoggedOut(accessToken)
     case UserDeleted(_) => onUserDeleted
     case TokenRefreshed(lastToken, newToken) => onTokenRefreshed(lastToken, newToken)
+    case PortfolioAdded(portfolioId) => onPortfolioAdded(portfolioId)
+    case PortfolioDeleted(portfolioId) => onPortfolioDeleted(portfolioId)
   }
 
-  private def onUserCreated(userId: UserId, token: Token): UserEntity = copy(userState = Some(UserState(userId, List(token))))
+  private def onUserCreated(userId: UserId, token: Token): UserEntity = copy(userState = Some(UserState.empty.copy(userId = userId, tokens = List(token))))
   private def onLoggedIn(token: Token): UserEntity = copy(userState.map(_.loggedIn(token)))
   private def onLoggedOut(accessToken: String): UserEntity = copy(userState.map(_.loggedOut(accessToken)))
   private def onUserDeleted: UserEntity = copy(None)
   private def onTokenRefreshed(lastAccessToken:Token, newAccessToken: Token): UserEntity =
     copy(userState.map(_.refreshToken(lastAccessToken, newAccessToken)))
+  private def onPortfolioAdded(portfolioId: PortfolioId): UserEntity = copy(userState.map(_.addPortfolio(portfolioId)))
+  private def onPortfolioDeleted(portfolioId: PortfolioId): UserEntity = copy(userState.map(_.deletePortfolio(portfolioId)))
+
+
 }
