@@ -7,6 +7,9 @@ import com.ktmet.asset.api.TradeHistory.TradeType.TradeType
 import play.api.libs.json.Json.JsValueWrapper
 import play.api.libs.json.{Format, JsBoolean, JsResult, JsSuccess, JsValue, Json, Reads, Writes}
 
+import scala.annotation.tailrec
+import scala.collection.mutable.ListBuffer
+
 case class Category(value: String) extends AnyVal
 object Category {
   implicit val format:Format[Category] = Json.format
@@ -23,18 +26,26 @@ object CategorySet {
   def empty = CategorySet(Set(Category.CashCategory))
 }
 
-case class StockRatio(stock: Stock, ratio: BigDecimal)
+case class StockRatio(stock: Stock, ratio: Int)
 object StockRatio{
   implicit val format:Format[StockRatio] = Json.format
-}
-case class CashRatio(country: Country, ratio: BigDecimal)
+  }
+case class CashRatio(country: Country, ratio: Int)
 object CashRatio{
   implicit val format:Format[CashRatio] = Json.format
+
 }
 
 
 case class GoalAssetRatio(stockRatios: Map[Category, List[StockRatio]]
-                          , cashRatios: Map[Category, List[CashRatio]])
+                          , cashRatios: Map[Category, List[CashRatio]]){
+  def containCategory(category: Category) = stockRatios.contains(category)
+  def addCategory(category: Category) = copy(stockRatios = stockRatios + (category -> List.empty))
+  def getCategoryRatios = stockRatios.map{ case (c, l) => c -> l.map(_.ratio).fold(0)(_+_)} ++
+                                                cashRatios.map{ case (c, l) => c -> l.map(_.ratio).fold(0)(_+_)}
+  def isValid = if(getCategoryRatios.values.fold(0)(_+_) == 100) true else false
+  def getCategories = stockRatios.keySet ++ cashRatios.keySet
+}
 object GoalAssetRatio{
 
   implicit val stockRatiosReads: Reads[Map[Category, List[StockRatio]]] =
@@ -70,9 +81,15 @@ object GoalAssetRatio{
 
   def empty = GoalAssetRatio(Map.empty, Map(Category.CashCategory ->
     List(CashRatio(Country.USA, 0), CashRatio(Country.KOREA, 0))))
+
+  def messageToObject(stockRatios: Map[String, List[StockRatio]], cashRatios: Map[String, List[CashRatio]]) =
+    GoalAssetRatio(stockRatios.map{ case (k, v) => Category(k)->v}, cashRatios.map{ case (k, v) => Category(k)->v})
 }
 
-case class AssetCategory(stockCategory: Map[Category, List[Stock]], cashCategory: Map[Category, List[Country]])
+case class AssetCategory(stockCategory: Map[Category, List[Stock]], cashCategory: Map[Category, List[Country]]){
+  def getCategories = stockCategory.keySet ++ cashCategory.keySet
+  def getAssets = (stockCategory.values.flatten[Stock], cashCategory.values.flatten[Country])
+}
 object AssetCategory {
   implicit val stockCategoryReads: Reads[Map[Category, List[Stock]]] =
     new Reads[Map[Category, List[Stock]]] {
@@ -104,9 +121,11 @@ object AssetCategory {
         }.toSeq:_*)
     }
 
-
   implicit val format:Format[AssetCategory] = Json.format
   def empty = AssetCategory(Map.empty, Map(Category.CashCategory -> List(Country.USA, Country.KOREA)))
+  def messageToObject(stockCategory: Map[String, List[Stock]] , cashCategory: Map[String, List[Country]]) =
+    AssetCategory(stockCategory.map{ case (k, v) => Category(k)->v}, cashCategory.map{ case (k, v) => Category(k)->v})
+
 }
 
 case class TradeHistory(tradeType: TradeType, stock: Stock, amount: Int, price: BigDecimal, timestamp: Long)
@@ -151,7 +170,9 @@ object StockHolding {
   implicit val format:Format[StockHolding] = Json.format
   def empty(stock: Stock) = StockHolding(stock, 0, 0, List.empty)
 }
-case class StockHoldingMap(map: Map[Stock, StockHolding])
+case class StockHoldingMap(map: Map[Stock, StockHolding]){
+  def getAssets = map.keySet
+}
 object StockHoldingMap {
 
   implicit val stockHoldingsReads: Reads[Map[Stock, StockHolding]] =
@@ -174,12 +195,34 @@ object StockHoldingMap {
 }
 
 
-case class CashHolding(country: Country, amount: BigDecimal, cashFlowHistories: List[CashFlowHistory])
+case class CashHolding(country: Country, amount: BigDecimal, cashFlowHistories: List[CashFlowHistory]){
+  def containHistory(history: CashFlowHistory) =
+    cashFlowHistories.find(elem => elem.country == history.country &&
+      elem.flowType == history.flowType && elem.timestamp == history.timestamp).fold(false)(_=>true)
+  private def addHistory(history: CashFlowHistory) = {
+    @tailrec
+    def add(list: List[CashFlowHistory], preList: ListBuffer[CashFlowHistory]): List[CashFlowHistory] =
+      list match {
+        case elem :: rest =>
+          if(elem.timestamp <= history.timestamp) preList.toList ::: history :: list
+          else add(rest, preList += elem)
+        case Nil => (preList += history).toList
+      }
+    copy(cashFlowHistories = add(cashFlowHistories, ListBuffer.empty))
+  }
+  def deposit(history: CashFlowHistory) = copy(amount = amount + history.amount).addHistory(history)
+
+}
 object CashHolding {
   implicit val format:Format[CashHolding] = Json.format
   def empty(country: Country) = CashHolding(country, 0, List.empty)
 }
-case class CashHoldingMap(map: Map[Country, CashHolding])
+case class CashHoldingMap(map: Map[Country, CashHolding]){
+  def getAssets = map.keySet
+  def getHoldingCash(country: Country) = map.get(country)
+  def deposit(history: CashFlowHistory) =
+    copy(map + (history.country -> map.getOrElse(history.country, CashHolding.empty(history.country))))
+}
 object CashHoldingMap {
 
   implicit val cashHoldingsReads: Reads[Map[Country, CashHolding]] =
@@ -201,7 +244,11 @@ object CashHoldingMap {
   def empty = CashHoldingMap(Map(Country.KOREA->CashHolding.empty(Country.KOREA)
     , Country.USA->CashHolding.empty(Country.USA)))
 }
-case class Holdings(stockHoldingMap: StockHoldingMap, cashHoldingMap: CashHoldingMap)
+case class Holdings(stockHoldingMap: StockHoldingMap, cashHoldingMap: CashHoldingMap){
+  def getAssets = (stockHoldingMap.getAssets, cashHoldingMap.getAssets)
+  def getCash(country: Country) = cashHoldingMap.getHoldingCash(country)
+  def deposit(history: CashFlowHistory) = copy(cashHoldingMap = cashHoldingMap.deposit(history))
+}
 object Holdings {
   implicit val format:Format[Holdings] = Json.format
   def empty = Holdings(StockHoldingMap.empty, CashHoldingMap.empty)
@@ -230,7 +277,11 @@ case object PortfolioId {
 case class PortfolioState(portfolioId: PortfolioId, name: String, updateTimestamp:Long, owner: UserId
                           , goalAssetRatio: GoalAssetRatio, assetCategory: AssetCategory,  holdings: Holdings) {
   def updateTimestamp(timestamp: Long) = copy(updateTimestamp = timestamp)
-
+  def containCategory(category: Category) = goalAssetRatio.containCategory(category)
+  def addCategory(category: Category) = copy(goalAssetRatio = goalAssetRatio.addCategory(category))
+  def getHoldingAssets = holdings.getAssets
+  def getHoldingCash(country: Country) = holdings.getCash(country)
+  def deposit(cashFlowHistory: CashFlowHistory) = copy(holdings = holdings.deposit(cashFlowHistory))
 }
 object PortfolioState {
   implicit val format:Format[PortfolioState] = Json.format

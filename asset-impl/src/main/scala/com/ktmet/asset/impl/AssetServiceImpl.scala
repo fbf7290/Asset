@@ -7,7 +7,7 @@ import akka.actor.ActorSystem
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import akka.util.Timeout
 import com.asset.collector.api.{CollectorService, KrwUsd, NowPrice, Stock}
-import com.ktmet.asset.api.{AssetService, AutoCompleteMessage, Category, PortfolioId, PortfolioState}
+import com.ktmet.asset.api.{AssetCategory, AssetService, AutoCompleteMessage, Category, GoalAssetRatio, PortfolioId, PortfolioState}
 import com.lightbend.lagom.scaladsl.api.ServiceCall
 import play.api.libs.ws.WSClient
 
@@ -15,7 +15,7 @@ import scala.concurrent.ExecutionContext
 import akka.actor.typed.scaladsl.adapter._
 import com.ktmet.asset.impl.actor.{NowPriceActor, StockAutoCompleter}
 import akka.actor.typed.scaladsl.AskPattern._
-import com.ktmet.asset.api.message.{CreatingPortfolioMessage, PortfolioCreatedMessage, TimestampMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, CreatingPortfolioMessage, PortfolioCreatedMessage, TimestampMessage, UpdatingGoalAssetRatioMessage}
 import com.ktmet.asset.common.api.ClientException
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
@@ -124,4 +124,29 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
     }
   }
 
+  override def addCategory(portfolioId: String): ServiceCall[AddingCategoryMessage, TimestampMessage] = authenticate{ userId =>
+    ServerServiceCall{ (_, addingCategoryMessage) =>
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply => PortfolioEntity.AddCategory(userId, Category(addingCategoryMessage.category), reply))
+        .collect{
+          case PortfolioEntity.TimestampResponse(updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), TimestampMessage(updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
+
+  override def updateGoalAssetRatio(portfolioId: String): ServiceCall[UpdatingGoalAssetRatioMessage, TimestampMessage] = authenticate{ userId =>
+    ServerServiceCall{ (_, updatingGoalAssetRatioMessage) =>
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.UpdateGoalAssetRatio(userId
+          , GoalAssetRatio.messageToObject(updatingGoalAssetRatioMessage.stockRatios, updatingGoalAssetRatioMessage.cashRatios)
+          , AssetCategory.messageToObject(updatingGoalAssetRatioMessage.stockCategory, updatingGoalAssetRatioMessage.cashCategory)
+          , reply))
+        .collect{
+          case PortfolioEntity.TimestampResponse(updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), TimestampMessage(updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
 }
