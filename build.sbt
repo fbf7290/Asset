@@ -69,6 +69,8 @@ lazy val collectorImpl = (project in file("collector-impl"))
 lazy val assetApi = (project in file("asset-api"))
   .settings(
     libraryDependencies ++= Seq(
+      scalaUuid,
+      cats,
       lagomScaladslApi
     )
   ).dependsOn(commonApi, collectorApi)
@@ -82,6 +84,7 @@ lazy val assetImpl = (project in file("asset-impl"))
       lagomScaladslPersistenceCassandra,
       lagomScaladslPubSub,
       lagomScaladslTestKit,
+      cats,
       jwt,
       jwtJson,
       macwire,

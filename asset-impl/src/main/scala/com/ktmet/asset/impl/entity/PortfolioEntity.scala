@@ -5,6 +5,7 @@ import akka.cluster.sharding.typed.scaladsl.{EntityContext, EntityTypeKey}
 import akka.persistence.typed.PersistenceId
 import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, ReplyEffect, RetentionCriteria}
 import com.asset.collector.api.Country.Country
+import com.asset.collector.api.Stock
 import com.ktmet.asset.api.CashFlowHistory.FlowType
 import com.ktmet.asset.api.{AssetCategory, CashFlowHistory, CashHolding, CashRatio, Category, CategorySet, GoalAssetRatio, Holdings, PortfolioId, PortfolioState, StockHolding, StockRatio, TradeHistory, UserId}
 import com.ktmet.asset.common.api.{ClientException, Timestamp}
@@ -20,9 +21,10 @@ object PortfolioEntity {
   case class GetPortfolio(replyTo: ActorRef[Response]) extends Command
   case class AddCategory(owner: UserId, category: Category, replyTo: ActorRef[Response]) extends Command
   case class UpdateGoalAssetRatio(owner: UserId, goalAssetRatio: GoalAssetRatio, assetCategory: AssetCategory, replyTo: ActorRef[Response]) extends Command
-  case class Deposit(owner: UserId, cashFlowHistory: CashFlowHistory, replyTo: ActorRef[Response]) extends Command
-  case class Withdraw(owner: UserId, cashFlowHistory: CashFlowHistory, replyTo: ActorRef[Response]) extends Command
-  case class ModifyCashFlowHistory(owner: UserId, lastCashFlowHistory: CashFlowHistory, newCashFlowHistory: CashFlowHistory, replyTo: ActorRef[Response]) extends Command
+  case class AddCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory, replyTo: ActorRef[Response]) extends Command
+  case class UpdateCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory, replyTo: ActorRef[Response]) extends Command
+  case class DeleteCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory, replyTo: ActorRef[Response]) extends Command
+  case class AddStock(owner: UserId, stock: Stock, category: Category, histories: Seq[TradeHistory], replyTo: ActorRef[Response]) extends Command
 
 
   sealed trait Response
@@ -40,6 +42,9 @@ object PortfolioEntity {
   case object InvalidCategoryException extends ClientException(404, "InvalidCategoryException", "InvalidCategoryException") with Response
   case object InvalidParameterException extends ClientException(409, "InvalidParameterException", "InvalidParameterException") with Response
   case object AlreadyHistoryException extends ClientException(404, "AlreadyHistoryException", "AlreadyHistoryException") with Response
+  case object AlreadyStockException extends ClientException(404, "AlreadyStockException", "AlreadyStockException") with Response
+  case object NotFoundHistoryException extends ClientException(404, "NotFoundHistoryException", "NotFoundHistoryException") with Response
+
 
   sealed trait Event extends AggregateEvent[Event] {
     override def aggregateTag: AggregateEventTagger[Event] = Event.Tag
@@ -64,17 +69,22 @@ object PortfolioEntity {
   object GoalAssetRatioUpdated{
     implicit val format:Format[GoalAssetRatioUpdated] = Json.format
   }
-  case class Deposited(cashFlowHistory: CashFlowHistory, updateTimestamp: Long) extends Event
-  object Deposited{
-    implicit val format:Format[Deposited] = Json.format
+  case class CashFlowHistoryAdded(cashFlowHistory: CashFlowHistory, updateTimestamp: Long) extends Event
+  object CashFlowHistoryAdded{
+    implicit val format:Format[CashFlowHistoryAdded] = Json.format
   }
-  case class Withdrew(cashFlowHistory: CashFlowHistory, updateTimestamp: Long) extends Event
-  object Withdrew{
-    implicit val format:Format[Withdrew] = Json.format
+  case class CashFlowHistoryUpdated(lastCashFlowHistory: CashFlowHistory, newCashFlowHistory: CashFlowHistory, updateTimestamp: Long) extends Event
+  object CashFlowHistoryUpdated{
+    implicit val format:Format[CashFlowHistoryUpdated] = Json.format
   }
-  case class CashFlowHistoryModified(lastCashFlowHistory: CashFlowHistory, newCashFlowHistory: CashFlowHistory, updateTimestamp: Long) extends Event
-  object CashFlowHistoryModified{
-    implicit val format:Format[CashFlowHistoryModified] = Json.format
+
+  case class CashFlowHistoryDeleted(cashFlowHistory: CashFlowHistory, updateTimestamp: Long) extends Event
+  object CashFlowHistoryDeleted{
+    implicit val format:Format[CashFlowHistoryDeleted] = Json.format
+  }
+  case class StockAdded(stock: Stock, category: Category, histories: Seq[TradeHistory], updateTimestamp: Long) extends Event
+  object StockAdded{
+    implicit val format:Format[StockAdded] = Json.format
   }
 
   def empty: PortfolioEntity = PortfolioEntity(None)
@@ -101,9 +111,9 @@ object PortfolioEntity {
     JsonSerializer[PortfolioDeleted],
     JsonSerializer[CategoryAdded],
     JsonSerializer[GoalAssetRatioUpdated],
-    JsonSerializer[Deposited],
-    JsonSerializer[Withdrew],
-    JsonSerializer[CashFlowHistoryModified],
+    JsonSerializer[CashFlowHistoryAdded],
+    JsonSerializer[CashFlowHistoryUpdated],
+    JsonSerializer[CashFlowHistoryDeleted],
     JsonSerializer[CategorySet],
     JsonSerializer[StockRatio],
     JsonSerializer[CashRatio],
@@ -149,9 +159,10 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     case GetPortfolio(replyTo) => onGetPortfolio(replyTo)
     case AddCategory(owner, category, replyTo) => onAddCategory(owner, category, replyTo)
     case UpdateGoalAssetRatio(owner, goalAssetRatio, assetCategory, replyTo) => onUpdateGoalAssetRatio(owner, goalAssetRatio, assetCategory, replyTo)
-    case Deposit(owner, cashFlowHistory, replyTo) => onDeposit(owner, cashFlowHistory, replyTo)
-    case Withdraw(owner, cashFlowHistory, replyTo) => onWithdraw(owner, cashFlowHistory, replyTo)
-    case ModifyCashFlowHistory(owner, lastCashFlowHistory, newCashFlowHistory, replyTo) => onModifyCashFlowHistory(owner, lastCashFlowHistory, newCashFlowHistory, replyTo)
+    case AddCashFlowHistory(owner, cashFlowHistory, replyTo) => onAddCashFlowHistory(owner, cashFlowHistory, replyTo)
+    case UpdateCashFlowHistory(owner, cashFlowHistory, replyTo) => onUpdateCashFlowHistory(owner, cashFlowHistory, replyTo)
+    case DeleteCashFlowHistory(owner, cashFlowHistory, replyTo) => onDeleteCashFlowHistory(owner, cashFlowHistory, replyTo)
+//    case AddStock(owner, stock, category, histories, replyTo) => onAddStock(owner, stock, category, histories, replyTo)
   }
 
   private def onCreatePortfolio(portfolioId: PortfolioId, owner: UserId, name: String
@@ -186,61 +197,63 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
         case false => Effect.reply(replyTo)(InvalidParameterException)
       }
     }
-  private def onDeposit(owner: UserId, cashFlowHistory: CashFlowHistory
-                        , replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
+  private def onAddCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory
+                                   , replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithOwner(owner, replyTo){ state =>
       state.getHoldingCash(cashFlowHistory.country) match {
         case None => Effect.reply(replyTo)(InvalidParameterException)
-        case Some(cash) =>
-          cash.containHistory(cashFlowHistory) match {
-            case true =>  Effect.reply(replyTo)(InvalidParameterException)
-            case false => Effect.persist(Deposited(cashFlowHistory, Timestamp.now))
-              .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
-          }
+        case Some(cash) => cash.containHistory(cashFlowHistory) match {
+          case true => Effect.reply(replyTo)(InvalidParameterException)
+          case false => Effect.persist(CashFlowHistoryAdded(cashFlowHistory, Timestamp.now))
+            .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+        }
       }
     }
-  // TODO withdraw permutation is valid 적용, modify도 마찬가지
-  private def onWithdraw(owner: UserId, cashFlowHistory: CashFlowHistory
-                           , replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
-    funcWithOwner(owner, replyTo){ state =>
-      state.getHoldingCash(cashFlowHistory.country) match {
-        case None => Effect.reply(replyTo)(InvalidParameterException)
-        case Some(cash) => (!cash.containHistory(cashFlowHistory) && cash.addHistory(cashFlowHistory).isValidBalance) match {
-            case true => Effect.persist(Withdrew(cashFlowHistory, Timestamp.now))
-              .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
-            case false => Effect.reply(replyTo)(InvalidParameterException)
-          }
-      }
-    }
-  private def onModifyCashFlowHistory(owner: UserId, lastCashFlowHistory: CashFlowHistory, newCashFlowHistory: CashFlowHistory
+  private def onUpdateCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory
                                       , replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithOwner(owner, replyTo){ state =>
-      state.getHoldingCash(lastCashFlowHistory.country) match {
+      state.getHoldingCash(cashFlowHistory.country) match {
         case None => Effect.reply(replyTo)(InvalidParameterException)
-        case Some(cash) => cash.containHistory(lastCashFlowHistory) match {
-          case true => newCashFlowHistory.flowType match {
-              case FlowType.DEPOSIT  => Effect.persist(CashFlowHistoryModified(lastCashFlowHistory, newCashFlowHistory, Timestamp.now))
-                .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
-              case FlowType.WITHDRAW => cash.removeHistory(lastCashFlowHistory).isValidWithdraw(newCashFlowHistory) match {
-                  case true => Effect.persist(CashFlowHistoryModified(lastCashFlowHistory, newCashFlowHistory, Timestamp.now))
-                    .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
-                  case false => Effect.reply(replyTo)(InvalidParameterException)
-                }
-            }
-          case false => Effect.reply(replyTo)(InvalidParameterException)
+        case Some(cash) => cash.findHistory(cashFlowHistory.id) match {
+            case Some(lastHistory) => Effect.persist(CashFlowHistoryUpdated(lastHistory, cashFlowHistory, Timestamp.now))
+              .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+            case None => Effect.reply(replyTo)(NotFoundHistoryException)
+          }
+        }
+      }
+  private def onDeleteCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory
+                                      , replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
+    funcWithOwner(owner, replyTo){ state =>
+      state.getHoldingCash(cashFlowHistory.country) match {
+        case None => Effect.reply(replyTo)(InvalidParameterException)
+        case Some(cash) => cash.containHistory(cashFlowHistory) match {
+          case true => Effect.persist(CashFlowHistoryDeleted(cashFlowHistory, Timestamp.now))
+            .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+          case false => Effect.reply(replyTo)(NotFoundHistoryException)
         }
       }
     }
 
+
+
+  //  private def onAddStock(owner: UserId, stock: Stock, category: Category
+//                         , histories: Seq[TradeHistory], replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
+//    funcWithOwner(owner, replyTo){ state =>
+//      state.containStock(stock) match {
+//        case true => Effect.reply(replyTo)(AlreadyStockException)
+//        case false =>
+//      }
+//
+//    }
 
   def applyEvent(evt: Event): PortfolioEntity = evt match {
     case PortfolioCreated(portfolioId, owner, name, updateTimestamp) => onPortfolioCreated(portfolioId, owner, name, updateTimestamp)
     case PortfolioDeleted(portfolioId) => onPortfolioDeleted(portfolioId)
     case CategoryAdded(category, updateTimestamp) => onCategoryAdded(category, updateTimestamp)
     case GoalAssetRatioUpdated(goalAssetRatio, assetCategory, updateTimestamp) => onGoalAssetRatioUpdated(goalAssetRatio, assetCategory, updateTimestamp)
-    case Deposited(cashFlowHistory, updateTimestamp) => onDeposited(cashFlowHistory, updateTimestamp)
-    case Withdrew(cashFlowHistory, updateTimestamp) => onWithdrew(cashFlowHistory, updateTimestamp)
-    case CashFlowHistoryModified(lastCashFlowHistory, newCashFlowHistory, updateTimestamp) => onCashFlowHistoryModified(lastCashFlowHistory, newCashFlowHistory, updateTimestamp)
+    case CashFlowHistoryAdded(cashFlowHistory, updateTimestamp) => onCashFlowHistoryAdded(cashFlowHistory, updateTimestamp)
+    case CashFlowHistoryUpdated(lastCashFlowHistory, newCashFlowHistory, updateTimestamp) => onCashFlowHistoryUpdated(lastCashFlowHistory, newCashFlowHistory, updateTimestamp)
+    case CashFlowHistoryDeleted(cashFlowHistory, updateTimestamp) => onCashFlowHistoryDeleted(cashFlowHistory, updateTimestamp)
   }
 
   private def onPortfolioCreated(portfolioId: PortfolioId, owner: UserId, name: String, updateTimestamp: Long): PortfolioEntity =
@@ -250,18 +263,12 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     copy(state.map(_.addCategory(category).updateTimestamp(updateTimestamp)))
   private def onGoalAssetRatioUpdated(goalAssetRatio: GoalAssetRatio, assetCategory: AssetCategory, updateTimestamp: Long): PortfolioEntity =
     copy(Some(state.get.copy(goalAssetRatio = goalAssetRatio, assetCategory = assetCategory, updateTimestamp = updateTimestamp)))
-  private def onDeposited(cashFlowHistory: CashFlowHistory, updateTimestamp: Long): PortfolioEntity =
-    copy(state.map(_.deposit(cashFlowHistory).updateTimestamp(updateTimestamp)))
-  private def onWithdrew(cashFlowHistory: CashFlowHistory, updateTimestamp: Long): PortfolioEntity =
-    copy(state.map(_.withdraw(cashFlowHistory).updateTimestamp(updateTimestamp)))
-  def onCashFlowHistoryModified(lastCashFlowHistory: CashFlowHistory, newCashFlowHistory: CashFlowHistory, updateTimestamp: Long): PortfolioEntity =
-    newCashFlowHistory match {
-      case FlowType.DEPOSIT => copy(state.map(_.removeCashHistory(lastCashFlowHistory).deposit(newCashFlowHistory).updateTimestamp(updateTimestamp)))
-      case FlowType.WITHDRAW => copy(state.map(_.removeCashHistory(lastCashFlowHistory).withdraw(newCashFlowHistory).updateTimestamp(updateTimestamp)))
-    }
-
-
-
+  private def onCashFlowHistoryAdded(cashFlowHistory: CashFlowHistory, updateTimestamp: Long): PortfolioEntity =
+    copy(state.map(_.addCashHistory(cashFlowHistory).updateTimestamp(updateTimestamp)))
+  private def onCashFlowHistoryUpdated(lastCashFlowHistory: CashFlowHistory, newCashFlowHistory: CashFlowHistory, updateTimestamp: Long): PortfolioEntity =
+    copy(state.map(_.removeCashHistory(lastCashFlowHistory).addCashHistory(newCashFlowHistory).updateTimestamp(updateTimestamp)))
+  private def onCashFlowHistoryDeleted(cashFlowHistory: CashFlowHistory, updateTimestamp: Long): PortfolioEntity =
+    copy(state.map(_.removeCashHistory(cashFlowHistory).updateTimestamp(updateTimestamp)))
 
 
 }
