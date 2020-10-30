@@ -82,7 +82,7 @@ object Market extends Enumeration {
 }
 
 
-case class Stock(market:Market, name:String, code:String) {
+case class Stock(country: Country, market:Market, name:String, code:String) {
   override def canEqual(a: Any) = a.isInstanceOf[Stock]
 
   override def equals(that: Any): Boolean =

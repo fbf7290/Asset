@@ -8,7 +8,7 @@ import akka.remote.WireFormats.FiniteDuration
 import akka.util.Timeout
 import com.asset.collector.api.Exception.ExternalResourceException
 import com.asset.collector.api.Market.Market
-import com.asset.collector.api.{DumbStock, FinnHubStock, KrwUsd, Market, NaverEtfListResponse, NowPrice, Price, Stock}
+import com.asset.collector.api.{Country, DumbStock, FinnHubStock, KrwUsd, Market, NaverEtfListResponse, NowPrice, Price, Stock}
 import com.ktmet.asset.common.api.Timestamp
 import org.jsoup.Jsoup
 import play.api.libs.json.Json
@@ -30,7 +30,7 @@ object External {
         val naverEtfListResponse = Json.parse(response.body).as[NaverEtfListResponse]
         (naverEtfListResponse.resultCode=="success") match {
           case true =>
-            stockList ++= naverEtfListResponse.result.etfItemList.map(etf => Stock(Market.ETF, etf.itemname, etf.itemcode))
+            stockList ++= naverEtfListResponse.result.etfItemList.map(etf => Stock(Country.KOREA, Market.ETF, etf.itemname, etf.itemcode))
             stockList.toSeq
           case false => throw ExternalResourceException()
         }
@@ -49,7 +49,7 @@ object External {
         val stocks = Jsoup.parseBodyFragment(response.body).body().getElementsByTag("tr")
         for(stock <- stocks.asScala){
           val stockAttrs = stock.getElementsByTag("td").asScala
-          if(stockAttrs.size != 0) stockList += Stock(market, stockAttrs(0).text, stockAttrs(1).text)
+          if(stockAttrs.size != 0) stockList += Stock(Country.KOREA ,market, stockAttrs(0).text, stockAttrs(1).text)
         }
         println(stockList)
         stockList.toList
@@ -66,7 +66,7 @@ object External {
     }
     wsClient.url(s"https://dumbstockapi.com/stock?exchanges=${marketParam}").get.map{
       response =>
-        Json.parse(response.body).as[Seq[DumbStock]].foreach(dumbStock => stockList += Stock(market, dumbStock.name, dumbStock.ticker.replace("^", "-P").replace(".", "-")))
+        Json.parse(response.body).as[Seq[DumbStock]].foreach(dumbStock => stockList += Stock(Country.USA, market, dumbStock.name, dumbStock.ticker.replace("^", "-P").replace(".", "-")))
         stockList.toSeq
     }
   }
@@ -76,7 +76,7 @@ object External {
     wsClient.url("https://finnhub.io/api/v1/stock/symbol?exchange=US&token=btq8hef48v6t9hdd4bn0").get().map{
       response =>
         Json.parse(response.body).as[Seq[FinnHubStock]].foreach(stock =>
-         stockList += Stock(Market.NONE, stock.description, stock.symbol))
+         stockList += Stock(Country.USA, Market.NONE, stock.description, stock.symbol))
         stockList.toSeq
     }
   }
@@ -86,7 +86,7 @@ object External {
     wsClient.url("https://finnhub.io/api/v1/stock/symbol?exchange=US&token=btq8hef48v6t9hdd4bn0").get().map{
       response =>
         Json.parse(response.body).as[Seq[FinnHubStock]].foreach(stock =>
-          if(stock.`type`.equals("ETF")) stockList += Stock(Market.ETF, stock.description, stock.symbol))
+          if(stock.`type`.equals("ETF")) stockList += Stock(Country.USA, Market.ETF, stock.description, stock.symbol))
         stockList.toSeq
     }
   }

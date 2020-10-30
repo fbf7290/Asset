@@ -19,7 +19,7 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
 
   override def selectStocks(country: Country): Future[Seq[Stock]] =
     session.selectAll(s"select code, name, market from ${country}_stock").map{ rows =>
-      rows.map(row => Stock(Market.toMarket(row.getString("market")).get, row.getString("name"), row.getString("code")))
+      rows.map(row => Stock(country, Market.toMarket(row.getString("market")).get, row.getString("name"), row.getString("code")))
     }
 
   override def insertStock(country: Country, stock:Stock): Future[Done] =
