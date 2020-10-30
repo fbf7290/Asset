@@ -26,8 +26,13 @@ object PortfolioEntity {
   case class UpdateGoalAssetRatio(owner: UserId, goalAssetRatio: GoalAssetRatio, assetCategory: AssetCategory, replyTo: ActorRef[Response]) extends Command
   case class AddCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory, replyTo: ActorRef[Response]) extends Command
   case class UpdateCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory, replyTo: ActorRef[Response]) extends Command
-  case class DeleteCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory, replyTo: ActorRef[Response]) extends Command
+  case class DeleteCashFlowHistory(owner: UserId, country: Country, cashFlowHistoryId: String, replyTo: ActorRef[Response]) extends Command
+//  case class DeleteCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory, replyTo: ActorRef[Response]) extends Command
   case class AddStock(owner: UserId, stock: Stock, category: Category, historySets: Seq[HistorySet], replyTo: ActorRef[Response]) extends Command
+  case class AddTradeHistory(owner: UserId, historySet: HistorySet, replyTo: ActorRef[Response]) extends Command
+  case class DeleteTradeHistory(owner: UserId, stock: Stock, tradeHistoryId: String, replyTo: ActorRef[Response]) extends Command
+//  case class DeleteStock(owner: UserId, stock: Stock, category: Category, replyTo: ActorRef[Response]) extends Command
+
 
 
   sealed trait Response
@@ -48,6 +53,7 @@ object PortfolioEntity {
   case object AlreadyStockException extends ClientException(404, "AlreadyStockException", "AlreadyStockException") with Response
   case object NotFoundHistoryException extends ClientException(404, "NotFoundHistoryException", "NotFoundHistoryException") with Response
   case object NotFoundCategoryException extends ClientException(404, "NotFoundCategoryException", "NotFoundCategoryException") with Response
+  case object NotFoundStockException extends ClientException(404, "NotFoundStockException", "NotFoundStockException") with Response
 
 
   sealed trait Event extends AggregateEvent[Event] {
@@ -90,6 +96,14 @@ object PortfolioEntity {
   object StockAdded{
     implicit val format:Format[StockAdded] = Json.format
   }
+  case class TradeHistoryAdded(historySet: HistorySet, updateTimestamp: Long) extends Event
+  object TradeHistoryAdded{
+    implicit val format:Format[TradeHistoryAdded] = Json.format
+  }
+  case class TradeHistoryDeleted(tradeHistory: TradeHistory, cashFlowHistory: CashFlowHistory, updateTimestamp: Long) extends Event
+  object TradeHistoryDeleted{
+    implicit val format:Format[TradeHistoryDeleted] = Json.format
+  }
 
   def empty: PortfolioEntity = PortfolioEntity(None)
   val typeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("Portfolio")
@@ -119,6 +133,8 @@ object PortfolioEntity {
     JsonSerializer[CashFlowHistoryUpdated],
     JsonSerializer[CashFlowHistoryDeleted],
     JsonSerializer[StockAdded],
+    JsonSerializer[TradeHistoryAdded],
+    JsonSerializer[TradeHistoryDeleted],
     JsonSerializer[CategorySet],
     JsonSerializer[StockRatio],
     JsonSerializer[CashRatio],
@@ -132,7 +148,7 @@ object PortfolioEntity {
     JsonSerializer[PortfolioEntity],
   )
 }
-
+// TODO DELETE
 
 case class PortfolioEntity(state: Option[PortfolioState]) {
   import PortfolioEntity._
@@ -166,8 +182,10 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     case UpdateGoalAssetRatio(owner, goalAssetRatio, assetCategory, replyTo) => onUpdateGoalAssetRatio(owner, goalAssetRatio, assetCategory, replyTo)
     case AddCashFlowHistory(owner, cashFlowHistory, replyTo) => onAddCashFlowHistory(owner, cashFlowHistory, replyTo)
     case UpdateCashFlowHistory(owner, cashFlowHistory, replyTo) => onUpdateCashFlowHistory(owner, cashFlowHistory, replyTo)
-    case DeleteCashFlowHistory(owner, cashFlowHistory, replyTo) => onDeleteCashFlowHistory(owner, cashFlowHistory, replyTo)
+    case DeleteCashFlowHistory(owner, country, cashFlowHistoryId, replyTo) => onDeleteCashFlowHistory(owner, country, cashFlowHistoryId, replyTo)
     case AddStock(owner, stock, category, historySets, replyTo) => onAddStock(owner, stock, category, historySets, replyTo)
+    case AddTradeHistory(owner, historySet, replyTo) => onAddTradeHistory(owner, historySet, replyTo)
+    case DeleteTradeHistory(owner, stock, tradeHistoryId, replyTo) => onDeleteTradeHistory(owner, stock, tradeHistoryId, replyTo)
   }
 
   private def onCreatePortfolio(portfolioId: PortfolioId, owner: UserId, name: String
@@ -226,18 +244,19 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
           }
         }
       }
-  private def onDeleteCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory
+  private def onDeleteCashFlowHistory(owner: UserId, country: Country, cashFlowHistoryId: String
                                       , replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithOwner(owner, replyTo){ state =>
-      state.getHoldingCash(cashFlowHistory.country) match {
+      state.getHoldingCash(country) match {
         case None => Effect.reply(replyTo)(InvalidParameterException)
-        case Some(cash) => cash.containHistory(cashFlowHistory) match {
-          case true => Effect.persist(CashFlowHistoryDeleted(cashFlowHistory, Timestamp.now))
-            .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
-          case false => Effect.reply(replyTo)(NotFoundHistoryException)
+        case Some(cash) => cash.findHistory(cashFlowHistoryId) match {
+            case Some(cashFlowHistory) => Effect.persist(CashFlowHistoryDeleted(cashFlowHistory, Timestamp.now))
+              .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+            case None => Effect.reply(replyTo)(NotFoundHistoryException)
+          }
         }
       }
-    }
+
   private def onAddStock(owner: UserId, stock: Stock, category: Category
                          , historySets: Seq[HistorySet], replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithOwner(owner, replyTo){ state =>
@@ -261,6 +280,39 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
         }
       }
     }
+  private def onAddTradeHistory(owner: UserId, historySet: HistorySet
+                                , replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
+    funcWithOwner(owner, replyTo){ state =>
+      state.getHoldingStock(historySet.tradeHistory.stock) match {
+        case Some(holding) => holding.addHistory(historySet.tradeHistory) match {
+          case Right(_) => Effect.persist(TradeHistoryAdded(historySet, Timestamp.now))
+            .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+          case Left(_) => Effect.reply(replyTo)(InvalidParameterException)
+        }
+        case None => Effect.reply(replyTo)(NotFoundStockException)
+      }
+    }
+  def onDeleteTradeHistory(owner: UserId, stock: Stock, tradeHistoryId: String, replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
+    funcWithOwner(owner, replyTo){ state =>
+      state.getHoldingStock(stock) match {
+        case Some(holding) => holding.findHistory(tradeHistoryId) match {
+          case Some(tradeHistory) => holding.removeHistory(tradeHistory) match {
+              case Right(_) => state.getHoldingCash(stock.country) match {
+                  case Some(cash) => cash.findHistory(tradeHistory.cashHistoryId) match {
+                      case Some(cashFlowHistory) =>
+                        Effect.persist(TradeHistoryDeleted(tradeHistory, cashFlowHistory, Timestamp.now))
+                          .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+                      case None => Effect.reply(replyTo)(InvalidParameterException)
+                    }
+                  case None => Effect.reply(replyTo)(InvalidParameterException)
+                }
+              case Left(_) => Effect.reply(replyTo)(InvalidParameterException)
+            }
+          case None => Effect.reply(replyTo)(NotFoundHistoryException)
+        }
+        case None => Effect.reply(replyTo)(NotFoundStockException)
+      }
+    }
 
 
   def applyEvent(evt: Event): PortfolioEntity = evt match {
@@ -272,6 +324,8 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     case CashFlowHistoryUpdated(lastCashFlowHistory, newCashFlowHistory, updateTimestamp) => onCashFlowHistoryUpdated(lastCashFlowHistory, newCashFlowHistory, updateTimestamp)
     case CashFlowHistoryDeleted(cashFlowHistory, updateTimestamp) => onCashFlowHistoryDeleted(cashFlowHistory, updateTimestamp)
     case StockAdded(stock, category, stockHolding, cashFlowHistories, updateTimestamp) => onStockAdded(stock, category, stockHolding, cashFlowHistories, updateTimestamp)
+    case TradeHistoryAdded(historySet, updateTimestamp) => onTradeHistoryAdded(historySet, updateTimestamp)
+    case TradeHistoryDeleted(tradeHistory, cashFlowHistory, updateTimestamp) => onTradeHistoryDeleted(tradeHistory, cashFlowHistory, updateTimestamp)
   }
 
   private def onPortfolioCreated(portfolioId: PortfolioId, owner: UserId, name: String, updateTimestamp: Long): PortfolioEntity =
@@ -289,5 +343,13 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     copy(state.map(_.removeCashHistory(cashFlowHistory).updateTimestamp(updateTimestamp)))
   private def onStockAdded(stock: Stock, category: Category, stockHolding: StockHolding, cashFlowHistories: Seq[CashFlowHistory], updateTimestamp: Long): PortfolioEntity =
     copy(state.map(_.addAssetCategory(category, stock).addStockHolding(stockHolding).addCashHistories(stock.country, cashFlowHistories).updateTimestamp(updateTimestamp)))
+  private def onTradeHistoryAdded(historySet: HistorySet, updateTimestamp: Long): PortfolioEntity =
+    copy(state.map(_.addTradeHistory(historySet.tradeHistory).addCashHistory(historySet.cashFlowHistory).updateTimestamp(updateTimestamp)))
+  private def onTradeHistoryDeleted(tradeHistory: TradeHistory, cashFlowHistory: CashFlowHistory, updateTimestamp: Long): PortfolioEntity =
+    copy(state.map(_.removeTradeHistory(tradeHistory).removeCashHistory(cashFlowHistory).updateTimestamp(updateTimestamp)))
+
+
+
+
 
 }
