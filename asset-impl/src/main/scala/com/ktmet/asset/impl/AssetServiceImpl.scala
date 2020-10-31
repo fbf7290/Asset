@@ -6,15 +6,19 @@ import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import akka.util.Timeout
-import com.asset.collector.api.{CollectorService, KrwUsd, NowPrice, Stock}
-import com.ktmet.asset.api.{AssetCategory, AssetService, AutoCompleteMessage, Category, GoalAssetRatio, PortfolioId, PortfolioState}
+import com.asset.collector.api.{CollectorService, Country, KrwUsd, Market, NowPrice, Stock}
+import com.ktmet.asset.api.{AssetCategory, AssetService, AutoCompleteMessage, CashFlowHistory, CashHolding, CashHoldingMap, CashRatio, Category, CategorySet, GoalAssetRatio, HistorySet, Holdings, PortfolioId, PortfolioState, StockHolding, StockHoldingMap, StockRatio, TradeHistory, UserId}
 import com.lightbend.lagom.scaladsl.api.ServiceCall
 import play.api.libs.ws.WSClient
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import akka.actor.typed.scaladsl.adapter._
 import com.ktmet.asset.impl.actor.{NowPriceActor, StockAutoCompleter}
 import akka.actor.typed.scaladsl.AskPattern._
+import akka.serialization.{SerializationExtension, Serializers}
+import com.asset.collector.api.Country.Country
+import com.ktmet.asset.api.CashFlowHistory.FlowType
+import com.ktmet.asset.api.TradeHistory.TradeType
 import com.ktmet.asset.api.message.{AddingCategoryMessage, CreatingPortfolioMessage, PortfolioCreatedMessage, TimestampMessage, UpdatingGoalAssetRatioMessage}
 import com.ktmet.asset.common.api.ClientException
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
@@ -149,4 +153,42 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
         }
     }
   }
+
+  override def test: ServiceCall[NotUsed, Done] =
+    ServerServiceCall{ (_, updatingGoalAssetRatioMessage) =>
+
+      val serialization = SerializationExtension(system)
+
+//      case class GoalAssetRatio(stockRatios: Map[Category, List[StockRatio]]
+//                                , cashRatios: Map[Category, List[CashRatio]])
+//      case class AssetCategory(stockCategory: Map[Category, List[StockRatio]], cashCategory: Map[Category, List[StockRatio]])
+      // Have something to serialize
+//      val original = PortfolioEntity.PortfolioResponse(PortfolioState.empty)
+      val asset = AssetCategory(Map(Category("10")->List(Stock(Country.USA, Market.ETF, "123","13"))), Map(Category.CashCategory -> List(Country.USA, Country.KOREA)))
+
+      val stock = Stock(Country.USA, Market.ETF, "123","13")
+      val goal = GoalAssetRatio(Map(Category("10")->List(StockRatio(Stock(Country.USA, Market.ETF, "123","13"), 10))), Map(Category.CashCategory ->List(CashRatio(Country.USA, 10))))
+      val tradeHistory = TradeHistory("123", TradeType.BUY, Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10), 123, "123")
+      val cashHistory = CashFlowHistory("123", FlowType.SOLDAMOUNT, Country.USA, BigDecimal(10), 123)
+      val stockHolding = StockHolding(Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10), List(tradeHistory))
+      val stockHoldingMap = StockHoldingMap(Map(stock -> stockHolding))
+      val cashHolding = CashHolding(Country.USA, BigDecimal(0), List(cashHistory))
+      val state = PortfolioState(PortfolioId("123"), "123", 0, UserId("123"), goal, asset, Holdings(stockHoldingMap, CashHoldingMap(Map(Country.USA->cashHolding))))
+//      val original = PortfolioEntity.PortfolioResponse(state)
+      val original = state
+      // Turn it into bytes, and retrieve the serializerId and manifest, which are needed for deserialization
+      val bytes = serialization.serialize(original).get
+      val serializerId = serialization.findSerializerFor(original).identifier
+      val manifest = Serializers.manifestFor(serialization.findSerializerFor(original), original)
+
+      // Turn it back into an object
+      val back = serialization.deserialize(bytes, serializerId, manifest).get
+      println(back)
+
+      println(back)
+
+
+      Future.successful(ResponseHeader.Ok.withStatus(200), Done)
+    }
+
 }

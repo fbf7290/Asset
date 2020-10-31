@@ -1,19 +1,28 @@
 package com.ktmet.asset.api
 
+import akka.serialization.Serializer
 import com.asset.collector.api.Country.Country
-import com.asset.collector.api.{Country, Market, Stock}
-import com.ktmet.asset.api.CashFlowHistory.FlowType
+import com.asset.collector.api.{Country, CountryType, Market, Stock}
+import com.ktmet.asset.api.CashFlowHistory.{FlowSerialType, FlowType}
 import com.ktmet.asset.api.CashFlowHistory.FlowType.FlowType
-import com.ktmet.asset.api.TradeHistory.TradeType
+import com.ktmet.asset.api.TradeHistory.{TradeSerialType, TradeType}
 import com.ktmet.asset.api.TradeHistory.TradeType.TradeType
 import play.api.libs.json.Json.JsValueWrapper
 import play.api.libs.json.{Format, JsBoolean, JsResult, JsSuccess, JsValue, Json, Reads, Writes}
 import cats.Functor
 import cats.Id
+import com.fasterxml.jackson.core.{JsonGenerator, JsonParser}
+import com.fasterxml.jackson.core.`type`.TypeReference
+import com.fasterxml.jackson.databind.{DeserializationContext, SerializerProvider}
+import com.fasterxml.jackson.databind.annotation.{JsonDeserialize, JsonSerialize}
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer
+import com.fasterxml.jackson.databind.ser.std.StdSerializer
+import com.fasterxml.jackson.module.scala.JsonScalaEnumeration
 import io.jvm.uuid._
 
 import scala.annotation.tailrec
 import scala.collection.mutable.ListBuffer
+
 
 case class Category(value: String) extends AnyVal
 object Category {
@@ -91,11 +100,16 @@ object GoalAssetRatio{
     GoalAssetRatio(stockRatios.map{ case (k, v) => Category(k)->v}, cashRatios.map{ case (k, v) => Category(k)->v})
 }
 
-case class AssetCategory(stockCategory: Map[Category, List[Stock]], cashCategory: Map[Category, List[Country]]){
+case class AssetCategory(stockCategory: Map[Category, List[Stock]]
+                         , cashCategory: Map[Category, List[Country]]){
   def getCategories: Set[Category] = stockCategory.keySet ++ cashCategory.keySet
   def getAssets: (Iterable[Stock], Iterable[Country]) = (stockCategory.values.flatten[Stock], cashCategory.values.flatten[Country])
   def addStock(category: Category, stock:Stock): AssetCategory =
     copy(stockCategory = stockCategory + (category -> (stock :: stockCategory.getOrElse(category, List.empty[Stock]))))
+  def contain(category: Category, stock: Stock): Boolean =
+    stockCategory.find{ case (c, l) => c == category && l.contains(stock)}.fold(false)(_=>true)
+  def removeStock(category: Category, stock: Stock): AssetCategory =
+    copy(stockCategory = stockCategory + (category -> stockCategory.getOrElse(category, List.empty[Stock]).filterNot(_ == stock)))
 }
 object AssetCategory {
   implicit val stockCategoryReads: Reads[Map[Category, List[Stock]]] =
@@ -137,7 +151,7 @@ object AssetCategory {
 
 case class TradeHistory(id: String, tradeType: TradeType, stock: Stock
                         , amount: Int, price: BigDecimal, timestamp: Long
-                       , cashHistoryId: String) extends Ordered[TradeHistory]{
+                        , cashHistoryId: String) extends Ordered[TradeHistory]{
   override def canEqual(a: Any): Boolean = a.isInstanceOf[CashFlowHistory]
 
   override def equals(that: Any): Boolean =
@@ -164,6 +178,7 @@ case class TradeHistory(id: String, tradeType: TradeType, stock: Stock
 object TradeHistory {
   implicit val format:Format[TradeHistory] = Json.format
 
+  class TradeSerialType extends TypeReference[TradeType.type] {}
   object TradeType extends Enumeration {
     type TradeType = Value
 
@@ -178,7 +193,8 @@ object TradeHistory {
   }
 }
 
-case class CashFlowHistory(id: String, flowType: FlowType, country: Country
+case class CashFlowHistory(id: String, flowType: FlowType
+                           , country: Country
                            , amount: BigDecimal, timestamp: Long){
   override def canEqual(a: Any): Boolean = a.isInstanceOf[CashFlowHistory]
 
@@ -196,6 +212,7 @@ case class CashFlowHistory(id: String, flowType: FlowType, country: Country
 object CashFlowHistory {
   implicit val format:Format[CashFlowHistory] = Json.format
 
+  class FlowSerialType extends TypeReference[FlowType.type] {}
   object FlowType extends Enumeration {
     type FlowType = Value
 
@@ -222,12 +239,14 @@ case class HistorySet(tradeHistory: TradeHistory, cashFlowHistory: CashFlowHisto
 object HistorySet {
   implicit val format:Format[HistorySet] = Json.format
 
-  def apply(tradeHistory: TradeHistory): HistorySet = new HistorySet(tradeHistory, tradeHistory.tradeType match {
-    case TradeType.BUY => CashFlowHistory(UUID.randomString, FlowType.BOUGHTAMOUNT
-      , tradeHistory.stock.country, tradeHistory.price * tradeHistory.amount, tradeHistory.timestamp)
-    case TradeType.SELL => CashFlowHistory(UUID.randomString, FlowType.SOLDAMOUNT
-      , tradeHistory.stock.country, tradeHistory.price * tradeHistory.amount, tradeHistory.timestamp)
-  })
+  def apply(tradeHistory: TradeHistory): HistorySet = {
+    new HistorySet(tradeHistory, tradeHistory.tradeType match {
+      case TradeType.BUY => CashFlowHistory(tradeHistory.cashHistoryId, FlowType.BOUGHTAMOUNT
+        , tradeHistory.stock.country, tradeHistory.price * tradeHistory.amount, tradeHistory.timestamp)
+      case TradeType.SELL => CashFlowHistory(tradeHistory.cashHistoryId, FlowType.SOLDAMOUNT
+        , tradeHistory.stock.country, tradeHistory.price * tradeHistory.amount, tradeHistory.timestamp)
+    })
+  }
 }
 
 case class StockHolding(stock: Stock, amount: Int
@@ -262,7 +281,7 @@ case class StockHolding(stock: Stock, amount: Int
       case true =>
         val (amount, avgPrice) = res.calcAmountAndAvgPrice
         Right(res.copy(amount = amount, avgPrice = avgPrice))
-      case false => Left(this)
+      case false => Left(res)
     }
   }
   def removeHistory(history: TradeHistory): Either[StockHolding, StockHolding] = {
@@ -271,7 +290,7 @@ case class StockHolding(stock: Stock, amount: Int
       case true =>
         val (amount, avgPrice) = res.calcAmountAndAvgPrice
         Right(res.copy(amount = amount, avgPrice = avgPrice))
-      case false => Left(this)
+      case false => Left(res)
     }
   }
 
@@ -280,17 +299,33 @@ object StockHolding {
   implicit val format:Format[StockHolding] = Json.format
   def empty(stock: Stock) = StockHolding(stock, 0, 0, List.empty)
 }
+
+
+@JsonSerialize(using = classOf[StockHoldingMapSerializer])
+@JsonDeserialize(using = classOf[StockHoldingMapDeserializer])
 case class StockHoldingMap(map: Map[Stock, StockHolding]){
   def containStock(stock: Stock): Boolean = map.contains(stock)
   def getAssets: Set[Stock] = map.keySet
   def getStock(stock: Stock): Option[StockHolding] = map.get(stock)
   def addHistory(history: TradeHistory): StockHoldingMap =
-    copy(map + (history.stock -> map.get(history.stock).get.addHistory(history).right))
+    copy(map + (history.stock -> map.get(history.stock).get.addHistory(history).right.get))
   def removeHistory(history: TradeHistory): StockHoldingMap =
-    copy(map + (history.stock -> map.get(history.stock).get.removeHistory(history).right))
+    copy(map + (history.stock -> map.get(history.stock).get.removeHistory(history).right.get))
   def addStockHolding(stockHolding: StockHolding): StockHoldingMap =
     copy(map + (stockHolding.stock -> stockHolding))
+  def removeStockHolding(stock: Stock): StockHoldingMap =
+    copy(map - stock)
+
 }
+class StockHoldingMapSerializer extends StdSerializer[StockHoldingMap](classOf[StockHoldingMap]) {
+  override def serialize(value: StockHoldingMap, gen: JsonGenerator, provider: SerializerProvider): Unit =
+        gen.writeString(Json.toJson(value).toString())
+}
+class StockHoldingMapDeserializer extends StdDeserializer[StockHoldingMap](classOf[StockHoldingMap]) {
+  override def deserialize(p: JsonParser, ctxt: DeserializationContext): StockHoldingMap =
+    Json.parse(p.getText).as[StockHoldingMap]
+}
+
 object StockHoldingMap {
 
   implicit val stockHoldingsReads: Reads[Map[Stock, StockHolding]] =
@@ -327,16 +362,16 @@ case class CashHolding(country: Country, amount: BigDecimal, cashFlowHistories: 
         case Nil => (preList += history).toList
       }
     val amount = history.flowType match {
-      case FlowType.DEPOSIT || FlowType.SOLDAMOUNT => this.amount + history.amount
-      case FlowType.WITHDRAW || FlowType.BOUGHTAMOUNT => this.amount - history.amount
+      case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => this.amount + history.amount
+      case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT => this.amount - history.amount
     }
     copy(amount = amount, cashFlowHistories = add(cashFlowHistories, ListBuffer.empty))
   }
   def removeHistory(history: CashFlowHistory): CashHolding =
     history.flowType match {
-      case FlowType.DEPOSIT || FlowType.SOLDAMOUNT => copy(amount = amount - history.amount
+      case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => copy(amount = amount - history.amount
         , cashFlowHistories = cashFlowHistories.filterNot(_ != history))
-      case FlowType.WITHDRAW || FlowType.BOUGHTAMOUNT  => copy(amount = amount + history.amount
+      case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT  => copy(amount = amount + history.amount
         , cashFlowHistories = cashFlowHistories.filterNot(_ != history))
     }
   def addHistories(histories: Seq[CashFlowHistory]): CashHolding = histories.foldLeft(this){
@@ -347,6 +382,8 @@ object CashHolding {
   implicit val format:Format[CashHolding] = Json.format
   def empty(country: Country): CashHolding = CashHolding(country, 0, List.empty)
 }
+@JsonSerialize(using = classOf[CashHoldingMapSerializer])
+@JsonDeserialize(using = classOf[CashHoldingMapDeserializer])
 case class CashHoldingMap(map: Map[Country, CashHolding]){
   def getAssets: Set[Country] = map.keySet
   def getHoldingCash(country: Country): Option[CashHolding] = map.get(country)
@@ -377,6 +414,16 @@ object CashHoldingMap {
   def empty: CashHoldingMap = CashHoldingMap(Map(Country.KOREA->CashHolding.empty(Country.KOREA)
     , Country.USA->CashHolding.empty(Country.USA)))
 }
+
+class CashHoldingMapSerializer extends StdSerializer[CashHoldingMap](classOf[CashHoldingMap]) {
+  override def serialize(value: CashHoldingMap, gen: JsonGenerator, provider: SerializerProvider): Unit =
+    gen.writeString(Json.toJson(value).toString())
+}
+class CashHoldingMapDeserializer extends StdDeserializer[CashHoldingMap](classOf[StockHoldingMap]) {
+  override def deserialize(p: JsonParser, ctxt: DeserializationContext): CashHoldingMap =
+    Json.parse(p.getText).as[CashHoldingMap]
+}
+
 case class Holdings(stockHoldingMap: StockHoldingMap, cashHoldingMap: CashHoldingMap){
   def containStock(stock: Stock): Boolean = stockHoldingMap.containStock(stock)
   def getAssets: (Set[Stock], Set[Country]) = (stockHoldingMap.getAssets, cashHoldingMap.getAssets)
@@ -388,6 +435,7 @@ case class Holdings(stockHoldingMap: StockHoldingMap, cashHoldingMap: CashHoldin
   def removeStockHistory(history: TradeHistory): Holdings = copy(stockHoldingMap = stockHoldingMap.removeHistory(history))
   def addStockHistory(history: TradeHistory): Holdings = copy(stockHoldingMap = stockHoldingMap.addHistory(history))
   def addStockHolding(stockHolding: StockHolding): Holdings = copy(stockHoldingMap = stockHoldingMap.addStockHolding(stockHolding))
+  def removeStockHolding(stock: Stock): Holdings = copy(stockHoldingMap = stockHoldingMap.removeStockHolding(stock))
 }
 object Holdings {
   implicit val format:Format[Holdings] = Json.format
@@ -420,16 +468,19 @@ case class PortfolioState(portfolioId: PortfolioId, name: String, updateTimestam
   def containCategory(category: Category): Boolean = goalAssetRatio.containCategory(category)
   def addCategory(category: Category): PortfolioState = copy(goalAssetRatio = goalAssetRatio.addCategory(category))
   def addAssetCategory(category: Category, stock: Stock): PortfolioState = copy(assetCategory = assetCategory.addStock(category, stock))
+  def containAssetCategory(category: Category, stock: Stock): Boolean = assetCategory.contain(category, stock)
+  def removeAssetCategory(category: Category, stock: Stock): PortfolioState = copy(assetCategory = assetCategory.removeStock(category, stock))
   def getHoldingAssets: (Set[Stock], Set[Country]) = holdings.getAssets
   def getHoldingStock(stock: Stock): Option[StockHolding] = holdings.getStock(stock)
   def getHoldingCash(country: Country): Option[CashHolding] = holdings.getCash(country)
   def removeCashHistory(cashFlowHistory: CashFlowHistory): PortfolioState = copy(holdings = holdings.removeCashHistory(cashFlowHistory))
   def addCashHistory(cashFlowHistory: CashFlowHistory): PortfolioState = copy(holdings = holdings.addCashHistory(cashFlowHistory))
-  def addCashHistories(country: Country, cashFlowHistories: Seq[CashFlowHistory]) = copy(holdings = holdings.addCashHistories(country, cashFlowHistories))
+  def addCashHistories(country: Country, cashFlowHistories: Seq[CashFlowHistory]): PortfolioState = copy(holdings = holdings.addCashHistories(country, cashFlowHistories))
   def containStock(stock: Stock): Boolean = holdings.containStock(stock)
   def removeTradeHistory(tradeHistory: TradeHistory): PortfolioState = copy(holdings = holdings.removeStockHistory(tradeHistory))
   def addTradeHistory(tradeHistory: TradeHistory): PortfolioState = copy(holdings = holdings.addStockHistory(tradeHistory))
   def addStockHolding(stockHolding: StockHolding): PortfolioState = copy(holdings = holdings.addStockHolding(stockHolding))
+  def removeStockHolding(stock: Stock): PortfolioState = copy(holdings = holdings.removeStockHolding(stock))
 }
 object PortfolioState {
   implicit val format:Format[PortfolioState] = Json.format

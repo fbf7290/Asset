@@ -2,6 +2,12 @@ package com.asset.collector.api
 
 import com.asset.collector.api.Country.Country
 import com.asset.collector.api.Market.Market
+import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.core.`type`.TypeReference
+import com.fasterxml.jackson.databind.DeserializationContext
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer
+import com.fasterxml.jackson.module.scala.JsonScalaEnumeration
 import play.api.libs.json.{Format, JsPath, JsResult, JsValue, Json, Reads, Writes}
 import play.api.libs.functional.syntax._
 
@@ -38,7 +44,7 @@ object Test{
   implicit val format: Format[Test] = Format(reads, writes)
 }
 
-
+class CountryType extends TypeReference[Country.type] {}
 object Country extends Enumeration {
   type Country = Value
 
@@ -51,6 +57,7 @@ object Country extends Enumeration {
 }
 
 
+class MarketType extends TypeReference[Market.type] {}
 object Market extends Enumeration {
   type Market = Value
 
@@ -82,7 +89,8 @@ object Market extends Enumeration {
 }
 
 
-case class Stock(country: Country, market:Market, name:String, code:String) {
+case class Stock(@JsonScalaEnumeration(classOf[CountryType]) country: Country
+                 , @JsonScalaEnumeration(classOf[MarketType]) market:Market, name:String, code:String) {
   override def canEqual(a: Any) = a.isInstanceOf[Stock]
 
   override def equals(that: Any): Boolean =

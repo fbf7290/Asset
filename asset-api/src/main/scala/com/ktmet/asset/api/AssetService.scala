@@ -31,6 +31,10 @@ trait AssetService extends Service{
   def updateGoalAssetRatio(portfolioId: String): ServiceCall[UpdatingGoalAssetRatioMessage, TimestampMessage]
 
 
+
+  def test: ServiceCall[NotUsed, Done]
+
+
   override def descriptor: Descriptor = {
 
     import Service._
@@ -51,7 +55,9 @@ trait AssetService extends Service{
         restCall(Method.DELETE, "/portfolio/:portfolioId", deletePortfolio _),
         restCall(Method.GET, "/portfolio/:portfolioId", getPortfolio _),
         restCall(Method.POST, "/portfolio/:portfolioId/category", addCategory _),
-        restCall(Method.POST, "/portfolio/:portfolioId/goal", updateGoalAssetRatio _)
+        restCall(Method.POST, "/portfolio/:portfolioId/goal", updateGoalAssetRatio _),
+
+        restCall(Method.GET, "/test", test)
 
       ).withAutoAcl(true)
       .withExceptionSerializer(new ClientExceptionSerializer(Environment.simple()))
