@@ -2,7 +2,7 @@ package com.ktmet.asset.api
 
 import akka.{Done, NotUsed}
 import com.asset.collector.api.{KrwUsd, NowPrice, Stock}
-import com.ktmet.asset.api.message.{AddingCategoryMessage, CreatingPortfolioMessage, LoginMessage, PortfolioCreatedMessage, RefreshingTokenMessage, SocialLoggingInMessage, TimestampMessage, TokenMessage, UpdatingGoalAssetRatioMessage, UserMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, CreatingPortfolioMessage, LoginMessage, PortfolioCreatedMessage, RefreshingTokenMessage, SocialLoggingInMessage, StockAddedMessage, TimestampMessage, TokenMessage, UpdatingGoalAssetRatioMessage, UserMessage}
 import com.ktmet.asset.common.api.ClientExceptionSerializer
 import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Descriptor, Service, ServiceAcl, ServiceCall}
@@ -29,6 +29,7 @@ trait AssetService extends Service{
   def getPortfolio(portfolioId: String): ServiceCall[NotUsed, PortfolioState]
   def addCategory(portfolioId: String): ServiceCall[AddingCategoryMessage, TimestampMessage]
   def updateGoalAssetRatio(portfolioId: String): ServiceCall[UpdatingGoalAssetRatioMessage, TimestampMessage]
+  def addStock(portfolioId: String): ServiceCall[AddingStockMessage, StockAddedMessage]
 
 
 
@@ -56,6 +57,7 @@ trait AssetService extends Service{
         restCall(Method.GET, "/portfolio/:portfolioId", getPortfolio _),
         restCall(Method.POST, "/portfolio/:portfolioId/category", addCategory _),
         restCall(Method.POST, "/portfolio/:portfolioId/goal", updateGoalAssetRatio _),
+        restCall(Method.POST, "/portfolio/:portfolioId/stock", addStock _),
 
         restCall(Method.GET, "/test", test)
 

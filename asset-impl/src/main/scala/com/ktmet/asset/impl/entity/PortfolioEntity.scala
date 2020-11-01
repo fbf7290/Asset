@@ -5,7 +5,7 @@ import akka.cluster.sharding.typed.scaladsl.{EntityContext, EntityTypeKey}
 import akka.persistence.typed.PersistenceId
 import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, ReplyEffect, RetentionCriteria}
 import com.asset.collector.api.Country.Country
-import com.asset.collector.api.Stock
+import com.asset.collector.api.{Country, Stock}
 import com.ktmet.asset.api.CashFlowHistory.FlowType
 import com.ktmet.asset.api.{AssetCategory, CashFlowHistory, CashHolding, CashRatio, Category, CategorySet, GoalAssetRatio, HistorySet, Holdings, PortfolioId, PortfolioState, StockHolding, StockRatio, TradeHistory, UserId}
 import com.ktmet.asset.common.api.{ClientException, Timestamp}
@@ -13,13 +13,14 @@ import com.lightbend.lagom.scaladsl.persistence.{AggregateEvent, AggregateEventS
 import com.lightbend.lagom.scaladsl.playjson.JsonSerializer
 import play.api.libs.json.{Format, Json}
 import cats.syntax.either._
+import io.jvm.uuid._
 
 
 
 object PortfolioEntity {
 
   sealed trait Command
-  case class CreatePortfolio(portfolioId: PortfolioId, owner: UserId, name: String, replyTo: ActorRef[Response]) extends Command
+  case class CreatePortfolio(portfolioId: PortfolioId, owner: UserId, name: String, usaCash: BigDecimal, koreaCash: BigDecimal, replyTo: ActorRef[Response]) extends Command
   case class DeletePortfolio(owner: UserId, replyTo: ActorRef[Response]) extends Command
   case class GetPortfolio(replyTo: ActorRef[Response]) extends Command
   case class AddCategory(owner: UserId, category: Category, replyTo: ActorRef[Response]) extends Command
@@ -38,7 +39,8 @@ object PortfolioEntity {
 
   case object Yes extends Response
   case class TimestampResponse(updateTimestamp: Long) extends Response
-  case class CreateResponse(portfolioId: PortfolioId, name: String, updateTimestamp: Long) extends Response
+  case class CreatedResponse(portfolioId: PortfolioId, name: String, usaCashFlowHistory: CashFlowHistory, koreaCashFlowHistory: CashFlowHistory, updateTimestamp: Long) extends Response
+  case class StockAddedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class PortfolioResponse(portfolioState: PortfolioState) extends Response
 
   case object NoPortfolioException extends ClientException(404, "NoPortfolioException", "Portfolio does not exist") with Response
@@ -61,7 +63,7 @@ object PortfolioEntity {
     val Tag: AggregateEventShards[Event] = AggregateEventTag.sharded[Event](numShards = 64)
   }
 
-  case class PortfolioCreated(portfolioId: PortfolioId, owner: UserId, name: String, updateTimestamp: Long) extends Event
+  case class PortfolioCreated(portfolioId: PortfolioId, owner: UserId, name: String, usaCashFlowHistory: CashFlowHistory, koreaCashHistory: CashFlowHistory, updateTimestamp: Long) extends Event
   object PortfolioCreated{
     implicit val format:Format[PortfolioCreated] = Json.format
   }
@@ -182,7 +184,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     }
 
   def applyCommand(cmd: Command): ReplyEffect[Event, PortfolioEntity] = cmd match {
-    case CreatePortfolio(portfolioId, owner, name, replyTo) => onCreatePortfolio(portfolioId, owner, name, replyTo)
+    case CreatePortfolio(portfolioId, owner, name, usaCash, koreaCash, replyTo) => onCreatePortfolio(portfolioId, owner, name, usaCash, koreaCash, replyTo)
     case DeletePortfolio(owner, replyTo) => onDeletePortfolio(owner, replyTo)
     case GetPortfolio(replyTo) => onGetPortfolio(replyTo)
     case AddCategory(owner, category, replyTo) => onAddCategory(owner, category, replyTo)
@@ -198,10 +200,13 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
   }
 
   private def onCreatePortfolio(portfolioId: PortfolioId, owner: UserId, name: String
-                                , replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
-    foldState(_ => Effect.reply(replyTo)(AlreadyPortfolioException))(
-      Effect.persist(PortfolioCreated(portfolioId, owner, name, Timestamp.now))
-        .thenReply(replyTo)(s=>CreateResponse(portfolioId, name, s.state.get.updateTimestamp)))
+                                , usaCash: BigDecimal, koreaCash: BigDecimal, replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
+    foldState(_ => Effect.reply(replyTo)(AlreadyPortfolioException)){
+      val usaHistory = CashFlowHistory(UUID.randomString, FlowType.DEPOSIT, Country.USA, usaCash, Timestamp.nowDate)
+      val koreaHistory = CashFlowHistory(UUID.randomString, FlowType.DEPOSIT, Country.KOREA, koreaCash, Timestamp.nowDate)
+
+      Effect.persist(PortfolioCreated(portfolioId, owner, name, usaHistory, koreaHistory, Timestamp.now))
+        .thenReply(replyTo)(s=>CreatedResponse(portfolioId, name, usaHistory, koreaHistory,  s.state.get.updateTimestamp))}
 
   private def onDeletePortfolio(owner: UserId, replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithOwner(owner, replyTo)(state => Effect.persist(PortfolioDeleted(state.portfolioId)).thenReply(replyTo)(_ => Yes))
@@ -273,7 +278,8 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
         case true => Effect.reply(replyTo)(AlreadyStockException)
         case false => state.containCategory(category) match {
           case true =>
-            val sortedSets = historySets.sortBy(_.tradeHistory)
+            val sortedSets = historySets.sortBy(_.tradeHistory).reverse
+            println(sortedSets)
             sortedSets.foldLeft(StockHolding.empty(stock).asRight[StockHolding]){
               (holding, set) => holding match {
                 case Right(value) => value.addHistory(set.tradeHistory)
@@ -282,7 +288,9 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
             } match {
               case Right(holding) => Effect.persist(StockAdded(stock ,category, holding
                 , sortedSets.map(_.cashFlowHistory), Timestamp.now))
-                .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+                .thenReply(replyTo)(e =>
+                  StockAddedResponse(e.state.get.getHoldingStock(stock).get
+                    , e.state.get.getHoldingCash(stock.country).get, e.state.get.updateTimestamp))
               case Left(_) => Effect.reply(replyTo)(InvalidParameterException)
             }
           case false => Effect.reply(replyTo)(NotFoundCategoryException)
@@ -347,7 +355,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     }
 
   def applyEvent(evt: Event): PortfolioEntity = evt match {
-    case PortfolioCreated(portfolioId, owner, name, updateTimestamp) => onPortfolioCreated(portfolioId, owner, name, updateTimestamp)
+    case PortfolioCreated(portfolioId, owner, name, usaCashFlowHistory, koreaCashHistory, updateTimestamp) => onPortfolioCreated(portfolioId, owner, name, usaCashFlowHistory, koreaCashHistory, updateTimestamp)
     case PortfolioDeleted(portfolioId) => onPortfolioDeleted(portfolioId)
     case CategoryAdded(category, updateTimestamp) => onCategoryAdded(category, updateTimestamp)
     case GoalAssetRatioUpdated(goalAssetRatio, assetCategory, updateTimestamp) => onGoalAssetRatioUpdated(goalAssetRatio, assetCategory, updateTimestamp)
@@ -361,8 +369,8 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     case StockDeleted(stock, category, updateTimestamp) => onStockDeleted(stock, category, updateTimestamp)
   }
 
-  private def onPortfolioCreated(portfolioId: PortfolioId, owner: UserId, name: String, updateTimestamp: Long): PortfolioEntity =
-    copy(Some(PortfolioState(portfolioId, name, updateTimestamp, owner, GoalAssetRatio.empty, AssetCategory.empty, Holdings.empty)))
+  private def onPortfolioCreated(portfolioId: PortfolioId, owner: UserId, name: String, usaCashFlowHistory: CashFlowHistory, koreaCashHistory: CashFlowHistory, updateTimestamp: Long): PortfolioEntity =
+    copy(Some(PortfolioState(portfolioId, name, updateTimestamp, owner, GoalAssetRatio.empty, AssetCategory.empty, Holdings.empty.addCashHistory(usaCashFlowHistory).addCashHistory(koreaCashHistory))))
   private def onPortfolioDeleted(portfolioId: PortfolioId): PortfolioEntity = copy(None)
   private def onCategoryAdded(category: Category, updateTimestamp: Long): PortfolioEntity =
     copy(state.map(_.addCategory(category).updateTimestamp(updateTimestamp)))

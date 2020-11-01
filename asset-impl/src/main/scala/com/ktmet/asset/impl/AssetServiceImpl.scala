@@ -7,7 +7,7 @@ import akka.actor.ActorSystem
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import akka.util.Timeout
 import com.asset.collector.api.{CollectorService, Country, KrwUsd, Market, NowPrice, Stock}
-import com.ktmet.asset.api.{AssetCategory, AssetService, AutoCompleteMessage, CashFlowHistory, CashHolding, CashHoldingMap, CashRatio, Category, CategorySet, GoalAssetRatio, HistorySet, Holdings, PortfolioId, PortfolioState, StockHolding, StockHoldingMap, StockRatio, TradeHistory, UserId}
+import com.ktmet.asset.api.{AssetCategory, AssetService, AutoCompleteMessage, BuyTradeHistory, CashFlowHistory, CashHolding, CashHoldingMap, CashRatio, Category, CategorySet, GoalAssetRatio, HistorySet, Holdings, PortfolioId, PortfolioState, SellTradeHistory, StockHolding, StockHoldingMap, StockRatio, TradeHistory, UserId}
 import com.lightbend.lagom.scaladsl.api.ServiceCall
 import play.api.libs.ws.WSClient
 
@@ -19,7 +19,7 @@ import akka.serialization.{SerializationExtension, Serializers}
 import com.asset.collector.api.Country.Country
 import com.ktmet.asset.api.CashFlowHistory.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType
-import com.ktmet.asset.api.message.{AddingCategoryMessage, CreatingPortfolioMessage, PortfolioCreatedMessage, TimestampMessage, UpdatingGoalAssetRatioMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, CreatingPortfolioMessage, PortfolioCreatedMessage, StockAddedMessage, TimestampMessage, UpdatingGoalAssetRatioMessage}
 import com.ktmet.asset.common.api.ClientException
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
@@ -87,9 +87,11 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
               case UserEntity.TooManyPortfolioException => throw UserEntity.TooManyPortfolioException
             }
         r <- portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
-                PortfolioEntity.CreatePortfolio(portfolioId, userId, createPortfolioMessage.name, reply))
+                PortfolioEntity.CreatePortfolio(portfolioId, userId, createPortfolioMessage.name
+                  , createPortfolioMessage.usaCash, createPortfolioMessage.koreaCash, reply))
             .collect{
-              case PortfolioEntity.CreateResponse(portfolioId, name, updateTimestamp) => PortfolioCreatedMessage(portfolioId.value, updateTimestamp)
+              case PortfolioEntity.CreatedResponse(portfolioId, name, usaCashFlowHistory, koreaCashFlowHistory, updateTimestamp) =>
+                PortfolioCreatedMessage(portfolioId.value, usaCashFlowHistory, koreaCashFlowHistory, updateTimestamp)
               case m: ClientException =>
                 userEntityRef(userId).ask[UserEntity.Response](reply => UserEntity.DeletePortfolio(portfolioId, reply))
                 throw m
@@ -154,6 +156,33 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
     }
   }
 
+  override def addStock(portfolioId: String): ServiceCall[AddingStockMessage, StockAddedMessage] = authenticate { userId =>
+    ServerServiceCall{ (_, addingStockMessage) =>
+      val historySets = addingStockMessage.tradingHistories.map{ history =>
+        val (tradeId, cashId) = (UUID.randomString, UUID.randomString)
+        history.tradeType match {
+          case TradeType.BUY =>
+            HistorySet(BuyTradeHistory(tradeId, history.tradeType
+              , addingStockMessage.stock, history.amount, history.price, history.timestamp, cashId))
+          case TradeType.SELL =>
+            HistorySet(SellTradeHistory(tradeId, history.tradeType
+              , addingStockMessage.stock, history.amount, history.price, history.timestamp, cashId, BigDecimal(0), BigDecimal(0)))
+        }
+      }
+
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.AddStock(userId
+          , addingStockMessage.stock, Category(addingStockMessage.category), historySets, reply))
+        .collect{
+          case PortfolioEntity.StockAddedResponse(stockHolding, cashHolding, updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), StockAddedMessage(stockHolding, cashHolding, updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
+
+
+
   override def test: ServiceCall[NotUsed, Done] =
     ServerServiceCall{ (_, updatingGoalAssetRatioMessage) =>
 
@@ -168,9 +197,9 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
 
       val stock = Stock(Country.USA, Market.ETF, "123","13")
       val goal = GoalAssetRatio(Map(Category("10")->List(StockRatio(Stock(Country.USA, Market.ETF, "123","13"), 10))), Map(Category.CashCategory ->List(CashRatio(Country.USA, 10))))
-      val tradeHistory = TradeHistory("123", TradeType.BUY, Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10), 123, "123")
+      val tradeHistory = SellTradeHistory("123", TradeType.BUY, Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10),  123, "123", BigDecimal(10), BigDecimal(10))
       val cashHistory = CashFlowHistory("123", FlowType.SOLDAMOUNT, Country.USA, BigDecimal(10), 123)
-      val stockHolding = StockHolding(Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10), List(tradeHistory))
+      val stockHolding = StockHolding(Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10), BigDecimal(10), BigDecimal(10),  List(tradeHistory))
       val stockHoldingMap = StockHoldingMap(Map(stock -> stockHolding))
       val cashHolding = CashHolding(Country.USA, BigDecimal(0), List(cashHistory))
       val state = PortfolioState(PortfolioId("123"), "123", 0, UserId("123"), goal, asset, Holdings(stockHoldingMap, CashHoldingMap(Map(Country.USA->cashHolding))))
