@@ -58,3 +58,24 @@ case class StockAddedMessage(stockHolding: StockHolding
 object StockAddedMessage {
   implicit val format:Format[StockAddedMessage] = Json.format
 }
+case class DeletingStockMessage(stock: Stock, category: String)
+object DeletingStockMessage {
+  implicit val format:Format[DeletingStockMessage] = Json.format
+}
+case class StockDeletedMessage(cashHolding: CashHolding, updateTimestamp: Long)
+object StockDeletedMessage {
+  implicit val format:Format[StockDeletedMessage] = Json.format
+}
+
+case class AddingTradeHistoryMessage(stock: Stock, tradeType: TradeType
+                              , amount: Int
+                              , price: BigDecimal
+                              , timestamp: Long)
+object AddingTradeHistoryMessage {
+  implicit val format:Format[AddingTradeHistoryMessage] = Json.format
+}
+case class TradeHistoryAddedMessage(stockHolding: StockHolding
+                                    , cashHolding: CashHolding, updateTimestamp: Long)
+object TradeHistoryAddedMessage {
+  implicit val format:Format[TradeHistoryAddedMessage] = Json.format
+}

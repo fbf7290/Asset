@@ -19,7 +19,7 @@ import akka.serialization.{SerializationExtension, Serializers}
 import com.asset.collector.api.Country.Country
 import com.ktmet.asset.api.CashFlowHistory.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType
-import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, CreatingPortfolioMessage, PortfolioCreatedMessage, StockAddedMessage, TimestampMessage, UpdatingGoalAssetRatioMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CreatingPortfolioMessage, DeletingStockMessage, PortfolioCreatedMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, UpdatingGoalAssetRatioMessage}
 import com.ktmet.asset.common.api.ClientException
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
@@ -166,7 +166,7 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
               , addingStockMessage.stock, history.amount, history.price, history.timestamp, cashId))
           case TradeType.SELL =>
             HistorySet(SellTradeHistory(tradeId, history.tradeType
-              , addingStockMessage.stock, history.amount, history.price, history.timestamp, cashId, BigDecimal(0), BigDecimal(0)))
+              , addingStockMessage.stock, history.amount, history.price, history.timestamp, cashId, BigDecimal(0)))
         }
       }
 
@@ -181,7 +181,40 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
     }
   }
 
+  override def deleteStock(portfolioId: String): ServiceCall[DeletingStockMessage, StockDeletedMessage] = authenticate { userId =>
+    ServerServiceCall{ (_, deletingStockMessage) =>
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.DeleteStock(userId
+          , deletingStockMessage.stock, Category(deletingStockMessage.category), reply))
+        .collect{
+          case PortfolioEntity.StockDeletedResponse(cashHolding, updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), StockDeletedMessage(cashHolding, updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
 
+  override def addTradeHistory(portfolioId: String): ServiceCall[AddingTradeHistoryMessage, TradeHistoryAddedMessage] = authenticate { userId =>
+    ServerServiceCall{ (_, addingTradeHistoryMessage) =>
+      val (tradeId, cashId) = (UUID.randomString, UUID.randomString)
+      val historySet = addingTradeHistoryMessage.tradeType match {
+        case TradeType.BUY =>
+          HistorySet(BuyTradeHistory(tradeId, addingTradeHistoryMessage.tradeType
+            , addingTradeHistoryMessage.stock, addingTradeHistoryMessage.amount, addingTradeHistoryMessage.price, addingTradeHistoryMessage.timestamp, cashId))
+        case TradeType.SELL =>
+          HistorySet(SellTradeHistory(tradeId, addingTradeHistoryMessage.tradeType
+            , addingTradeHistoryMessage.stock, addingTradeHistoryMessage.amount, addingTradeHistoryMessage.price, addingTradeHistoryMessage.timestamp, cashId, BigDecimal(0)))
+      }
+
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.AddTradeHistory(userId, historySet, reply))
+        .collect{
+          case PortfolioEntity.TradeHistoryAddedResponse(stockHolding, cashHolding, updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), TradeHistoryAddedMessage(stockHolding, cashHolding, updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
 
   override def test: ServiceCall[NotUsed, Done] =
     ServerServiceCall{ (_, updatingGoalAssetRatioMessage) =>
@@ -197,9 +230,9 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
 
       val stock = Stock(Country.USA, Market.ETF, "123","13")
       val goal = GoalAssetRatio(Map(Category("10")->List(StockRatio(Stock(Country.USA, Market.ETF, "123","13"), 10))), Map(Category.CashCategory ->List(CashRatio(Country.USA, 10))))
-      val tradeHistory = SellTradeHistory("123", TradeType.BUY, Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10),  123, "123", BigDecimal(10), BigDecimal(10))
+      val tradeHistory = SellTradeHistory("123", TradeType.BUY, Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10),  123, "123", BigDecimal(10))
       val cashHistory = CashFlowHistory("123", FlowType.SOLDAMOUNT, Country.USA, BigDecimal(10), 123)
-      val stockHolding = StockHolding(Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10), BigDecimal(10), BigDecimal(10),  List(tradeHistory))
+      val stockHolding = StockHolding(Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10), BigDecimal(10),  List(tradeHistory))
       val stockHoldingMap = StockHoldingMap(Map(stock -> stockHolding))
       val cashHolding = CashHolding(Country.USA, BigDecimal(0), List(cashHistory))
       val state = PortfolioState(PortfolioId("123"), "123", 0, UserId("123"), goal, asset, Holdings(stockHoldingMap, CashHoldingMap(Map(Country.USA->cashHolding))))

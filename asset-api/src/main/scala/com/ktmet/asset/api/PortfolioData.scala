@@ -204,8 +204,8 @@ object TradeHistory {
       val tradeType = (JsPath \ "tradeType").read[String].reads(js)
       tradeType.fold(
         errors => JsError("tradeType undefined or incorrect"), {
-          case "buy"   => (JsPath \ "data").read[BuyTradeHistory].reads(js)
-          case "sell"  => (JsPath \ "data").read[SellTradeHistory].reads(js)
+          case "Buy"   => (JsPath \ "data").read[BuyTradeHistory].reads(js)
+          case "Sell"  => (JsPath \ "data").read[SellTradeHistory].reads(js)
         }
       )
     },
@@ -213,14 +213,14 @@ object TradeHistory {
       case o: BuyTradeHistory  =>
         JsObject(
           Seq(
-            "tradeType" -> JsString("buy"),
+            "tradeType" -> JsString("Buy"),
             "data"      -> BuyTradeHistory.format.writes(o)
           )
         )
       case o: SellTradeHistory =>
         JsObject(
           Seq(
-            "tradeType" -> JsString("sell"),
+            "tradeType" -> JsString("Sell"),
             "data"      -> SellTradeHistory.format.writes(o)
           )
         )
@@ -412,7 +412,12 @@ object CashFlowHistory {
       else None
   }
 
-  def empty(id: String) = CashFlowHistory(id, FlowType.SOLDAMOUNT, Country.USA, BigDecimal(0), 0)
+  def apply(tradeHistory: TradeHistory) = tradeHistory match {
+    case tradeHistory: BuyTradeHistory => new CashFlowHistory(tradeHistory.cashHistoryId, FlowType.BOUGHTAMOUNT
+      , tradeHistory.stock.country, tradeHistory.price * tradeHistory.amount, tradeHistory.timestamp)
+    case tradeHistory: SellTradeHistory => new CashFlowHistory(tradeHistory.cashHistoryId, FlowType.SOLDAMOUNT
+      , tradeHistory.stock.country, tradeHistory.price * tradeHistory.amount, tradeHistory.timestamp)
+  }
 }
 
 case class CashHolding(country: Country, amount: BigDecimal, cashFlowHistories: List[CashFlowHistory]){
@@ -437,12 +442,15 @@ case class CashHolding(country: Country, amount: BigDecimal, cashFlowHistories: 
   def removeHistory(history: CashFlowHistory): CashHolding =
     history.flowType match {
       case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => copy(amount = amount - history.amount
-        , cashFlowHistories = cashFlowHistories.filterNot(_ != history))
+        , cashFlowHistories = cashFlowHistories.filterNot(_ == history))
       case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT  => copy(amount = amount + history.amount
-        , cashFlowHistories = cashFlowHistories.filterNot(_ != history))
+        , cashFlowHistories = cashFlowHistories.filterNot(_ == history))
     }
   def addHistories(histories: Seq[CashFlowHistory]): CashHolding = histories.foldLeft(this){
     (holding, history) => holding.addHistory(history)
+  }
+  def removeHistories(histories: Seq[CashFlowHistory]): CashHolding = histories.foldLeft(this){
+    (holding, history) => holding.removeHistory(history)
   }
 }
 object CashHolding {
@@ -460,6 +468,8 @@ case class CashHoldingMap(map: Map[Country, CashHolding]){
     copy(map + (history.country -> map.getOrElse(history.country, CashHolding.empty(history.country)).addHistory(history)))
   def addHistories(country: Country, histories: Seq[CashFlowHistory]): CashHoldingMap =
     copy(map + (country -> map.getOrElse(country, CashHolding.empty(country)).addHistories(histories)))
+  def removeHistories(country: Country, histories: Seq[CashFlowHistory]): CashHoldingMap =
+    copy(map + (country -> map.getOrElse(country, CashHolding.empty(country)).removeHistories(histories)))
 }
 object CashHoldingMap {
   implicit val cashHoldingsReads: Reads[Map[Country, CashHolding]] =
@@ -497,6 +507,7 @@ case class Holdings(stockHoldingMap: StockHoldingMap, cashHoldingMap: CashHoldin
   def getStock(stock: Stock): Option[StockHolding] = stockHoldingMap.getStock(stock)
   def getCash(country: Country): Option[CashHolding] = cashHoldingMap.getHoldingCash(country)
   def removeCashHistory(history: CashFlowHistory): Holdings = copy(cashHoldingMap = cashHoldingMap.removeHistory(history))
+  def removeCashHistories(country: Country, histories: Seq[CashFlowHistory]): Holdings = copy(cashHoldingMap = cashHoldingMap.removeHistories(country, histories))
   def addCashHistory(history: CashFlowHistory): Holdings = copy(cashHoldingMap = cashHoldingMap.addHistory(history))
   def addCashHistories(country: Country, histories: Seq[CashFlowHistory]): Holdings = copy(cashHoldingMap = cashHoldingMap.addHistories(country, histories))
   def removeStockHistory(history: TradeHistory): Holdings = copy(stockHoldingMap = stockHoldingMap.removeHistory(history))
@@ -514,12 +525,7 @@ object HistorySet {
   implicit val format:Format[HistorySet] = Json.format
 
   def apply(tradeHistory: TradeHistory): HistorySet = {
-    new HistorySet(tradeHistory, tradeHistory match {
-      case tradeHistory: BuyTradeHistory => CashFlowHistory(tradeHistory.cashHistoryId, FlowType.BOUGHTAMOUNT
-        , tradeHistory.stock.country, tradeHistory.price * tradeHistory.amount, tradeHistory.timestamp)
-      case tradeHistory: SellTradeHistory => CashFlowHistory(tradeHistory.cashHistoryId, FlowType.SOLDAMOUNT
-        , tradeHistory.stock.country, tradeHistory.price * tradeHistory.amount, tradeHistory.timestamp)
-    })
+    new HistorySet(tradeHistory, CashFlowHistory(tradeHistory))
   }
 }
 
@@ -555,6 +561,7 @@ case class PortfolioState(portfolioId: PortfolioId, name: String, updateTimestam
   def getHoldingStock(stock: Stock): Option[StockHolding] = holdings.getStock(stock)
   def getHoldingCash(country: Country): Option[CashHolding] = holdings.getCash(country)
   def removeCashHistory(cashFlowHistory: CashFlowHistory): PortfolioState = copy(holdings = holdings.removeCashHistory(cashFlowHistory))
+  def removeCashHistories(country: Country, cashFlowHistories: Seq[CashFlowHistory]): PortfolioState = copy(holdings = holdings.removeCashHistories(country, cashFlowHistories))
   def addCashHistory(cashFlowHistory: CashFlowHistory): PortfolioState = copy(holdings = holdings.addCashHistory(cashFlowHistory))
   def addCashHistories(country: Country, cashFlowHistories: Seq[CashFlowHistory]): PortfolioState = copy(holdings = holdings.addCashHistories(country, cashFlowHistories))
   def containStock(stock: Stock): Boolean = holdings.containStock(stock)

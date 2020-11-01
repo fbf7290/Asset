@@ -41,7 +41,9 @@ object PortfolioEntity {
   case class TimestampResponse(updateTimestamp: Long) extends Response
   case class CreatedResponse(portfolioId: PortfolioId, name: String, usaCashFlowHistory: CashFlowHistory, koreaCashFlowHistory: CashFlowHistory, updateTimestamp: Long) extends Response
   case class StockAddedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
+  case class StockDeletedResponse(cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class PortfolioResponse(portfolioState: PortfolioState) extends Response
+  case class TradeHistoryAddedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
 
   case object NoPortfolioException extends ClientException(404, "NoPortfolioException", "Portfolio does not exist") with Response
   case object AlreadyPortfolioException extends ClientException(404, "AlreadyPortfolioException", "Portfolio already exist") with Response
@@ -108,7 +110,7 @@ object PortfolioEntity {
   object TradeHistoryUpdated{
     implicit val format:Format[TradeHistoryUpdated] = Json.format
   }
-  case class StockDeleted(stock: Stock, category: Category, updateTimestamp: Long) extends Event
+  case class StockDeleted(stock: Stock, category: Category, stockHolding: StockHolding, updateTimestamp: Long) extends Event
   object StockDeleted{
     implicit val format:Format[StockDeleted] = Json.format
   }
@@ -279,7 +281,6 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
         case false => state.containCategory(category) match {
           case true =>
             val sortedSets = historySets.sortBy(_.tradeHistory).reverse
-            println(sortedSets)
             sortedSets.foldLeft(StockHolding.empty(stock).asRight[StockHolding]){
               (holding, set) => holding match {
                 case Right(value) => value.addHistory(set.tradeHistory)
@@ -303,7 +304,9 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
       state.getHoldingStock(historySet.tradeHistory.stock) match {
         case Some(holding) => holding.addHistory(historySet.tradeHistory) match {
           case Right(_) => Effect.persist(TradeHistoryAdded(historySet, Timestamp.now))
-            .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+            .thenReply(replyTo)(e =>
+              TradeHistoryAddedResponse(e.state.get.getHoldingStock(historySet.tradeHistory.stock).get
+                , e.state.get.getHoldingCash(historySet.tradeHistory.stock.country).get, e.state.get.updateTimestamp))
           case Left(_) => Effect.reply(replyTo)(InvalidParameterException)
         }
         case None => Effect.reply(replyTo)(NotFoundStockException)
@@ -345,12 +348,13 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
         case None => Effect.reply(replyTo)(NotFoundStockException)
       }
     }
+
   private def onDeleteStock(owner: UserId, stock: Stock, category: Category, replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithOwner(owner, replyTo){ state =>
-      state.containAssetCategory(category, stock) && state.containStock(stock) match {
-        case true => Effect.persist(StockDeleted(stock, category, Timestamp.now))
-          .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
-        case false => Effect.reply(replyTo)(NotFoundStockException)
+      (state.containAssetCategory(category, stock) , state.getHoldingStock(stock)) match {
+        case (true, Some(holding)) => Effect.persist(StockDeleted(stock, category, holding, Timestamp.now))
+          .thenReply(replyTo)(e => StockDeletedResponse(e.state.get.getHoldingCash(stock.country).get, e.state.get.updateTimestamp))
+        case _ => Effect.reply(replyTo)(NotFoundStockException)
       }
     }
 
@@ -366,7 +370,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     case TradeHistoryAdded(historySet, updateTimestamp) => onTradeHistoryAdded(historySet, updateTimestamp)
     case TradeHistoryDeleted(tradeHistory, cashFlowHistory, updateTimestamp) => onTradeHistoryDeleted(tradeHistory, cashFlowHistory, updateTimestamp)
     case TradeHistoryUpdated(lastHistorySet, newHistorySet, updateTimestamp) => onTradeHistoryUpdated(lastHistorySet, newHistorySet, updateTimestamp)
-    case StockDeleted(stock, category, updateTimestamp) => onStockDeleted(stock, category, updateTimestamp)
+    case StockDeleted(stock, category, stockHolding, updateTimestamp) => onStockDeleted(stock, category, stockHolding, updateTimestamp)
   }
 
   private def onPortfolioCreated(portfolioId: PortfolioId, owner: UserId, name: String, usaCashFlowHistory: CashFlowHistory, koreaCashHistory: CashFlowHistory, updateTimestamp: Long): PortfolioEntity =
@@ -391,8 +395,8 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
   private def onTradeHistoryUpdated(lastHistorySet: HistorySet, newHistorySet: HistorySet, updateTimestamp: Long): PortfolioEntity =
     copy(state.map(_.removeTradeHistory(lastHistorySet.tradeHistory).addTradeHistory(newHistorySet.tradeHistory)
       .removeCashHistory(lastHistorySet.cashFlowHistory).addCashHistory(newHistorySet.cashFlowHistory).updateTimestamp(updateTimestamp)))
-  private def onStockDeleted(stock: Stock, category: Category, updateTimestamp: Long): PortfolioEntity =
-    copy(state.map(_.removeAssetCategory(category, stock).removeStockHolding(stock).updateTimestamp(updateTimestamp)))
+  private def onStockDeleted(stock: Stock, category: Category, stockHolding: StockHolding, updateTimestamp: Long): PortfolioEntity =
+    copy(state.map(_.removeAssetCategory(category, stock).removeStockHolding(stock).removeCashHistories(stock.country, stockHolding.tradeHistories.map(h=>CashFlowHistory(h))).updateTimestamp(updateTimestamp)))
 
 
 
