@@ -19,7 +19,7 @@ import akka.serialization.{SerializationExtension, Serializers}
 import com.asset.collector.api.Country.Country
 import com.ktmet.asset.api.CashFlowHistory.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType
-import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CreatingPortfolioMessage, DeletingStockMessage, DeletingTradeHistoryMessage, PortfolioCreatedMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingGoalAssetRatioMessage, UpdatingTradeHistoryMessage}
+import com.ktmet.asset.api.message.{AddingCashFlowHistory, AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, PortfolioCreatedMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingTradeHistoryMessage}
 import com.ktmet.asset.common.api.ClientException
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
@@ -250,6 +250,48 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
         }
     }
   }
+
+  override def addCashFlowHistory(portfolioId: String): ServiceCall[AddingCashFlowHistory, CashFlowHistoryAddedMessage] = authenticate { userId =>
+    ServerServiceCall{ (_, addingCashFlowHistory) =>
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.AddCashFlowHistory(userId, CashFlowHistory(UUID.randomString
+          , addingCashFlowHistory.flowType, addingCashFlowHistory.country
+          , addingCashFlowHistory.balance, addingCashFlowHistory.timestamp), reply))
+        .collect{
+          case PortfolioEntity.CashFlowHistoryAddedResponse(cashHolding, updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), CashFlowHistoryAddedMessage(cashHolding, updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
+
+  override def deleteCashFlowHistory(portfolioId: String): ServiceCall[DeletingCashFlowHistory, CashFlowHistoryDeletedMessage] = authenticate { userId =>
+    ServerServiceCall{ (_, deletingCashFlowHistory) =>
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.DeleteCashFlowHistory(userId, deletingCashFlowHistory.country
+          , deletingCashFlowHistory.cashFlowHistoryId, reply))
+        .collect{
+          case PortfolioEntity.CashFlowHistoryDeletedResponse(cashHolding, updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), CashFlowHistoryDeletedMessage(cashHolding, updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
+
+  override def updateCashFlowHistory(portfolioId: String): ServiceCall[UpdatingCashFlowHistory, CashFlowHistoryUpdatedMessage] = authenticate { userId =>
+    ServerServiceCall{ (_, updatingCashFlowHistory) =>
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.UpdateCashFlowHistory(userId, CashFlowHistory(updatingCashFlowHistory.cashHistoryId
+          , updatingCashFlowHistory.flowType, updatingCashFlowHistory.country
+          , updatingCashFlowHistory.balance, updatingCashFlowHistory.timestamp), reply))
+        .collect{
+          case PortfolioEntity.CashFlowHistoryUpdatedResponse(cashHolding, updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), CashFlowHistoryUpdatedMessage(cashHolding, updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
+
 
   override def test: ServiceCall[NotUsed, Done] =
     ServerServiceCall{ (_, updatingGoalAssetRatioMessage) =>

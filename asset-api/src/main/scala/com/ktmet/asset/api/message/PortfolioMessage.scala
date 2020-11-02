@@ -108,7 +108,7 @@ object TradeHistoryUpdatedMessage {
 }
 
 case class AddingCashFlowHistory(flowType: FlowType
-                                       , amount: Int
+                                       , balance: Int
                                        , country: Country
                                        , timestamp: Long)
 object AddingCashFlowHistory {
@@ -116,5 +116,30 @@ object AddingCashFlowHistory {
 }
 case class CashFlowHistoryAddedMessage(cashHolding: CashHolding, updateTimestamp: Long)
 object CashFlowHistoryAddedMessage {
-  implicit val format:Format[TradeHistoryUpdatedMessage] = Json.format
+  implicit val format:Format[CashFlowHistoryAddedMessage] = Json.format
+}
+
+
+case class DeletingCashFlowHistory(country: Country
+                                 , cashFlowHistoryId: String)
+object DeletingCashFlowHistory {
+  implicit val format:Format[DeletingCashFlowHistory] = Json.format
+}
+case class CashFlowHistoryDeletedMessage(cashHolding: CashHolding, updateTimestamp: Long)
+object CashFlowHistoryDeletedMessage {
+  implicit val format:Format[CashFlowHistoryDeletedMessage] = Json.format
+}
+
+
+case class UpdatingCashFlowHistory(cashHistoryId: String
+                                   , flowType: FlowType
+                                   , country: Country
+                                   , balance: BigDecimal
+                                   , timestamp: Long)
+object UpdatingCashFlowHistory {
+  implicit val format:Format[UpdatingCashFlowHistory] = Json.format
+}
+case class CashFlowHistoryUpdatedMessage(cashHolding: CashHolding, updateTimestamp: Long)
+object CashFlowHistoryUpdatedMessage {
+  implicit val format:Format[CashFlowHistoryUpdatedMessage] = Json.format
 }

@@ -46,6 +46,9 @@ object PortfolioEntity {
   case class TradeHistoryAddedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class TradeHistoryDeletedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class TradeHistoryUpdatedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
+  case class CashFlowHistoryAddedResponse(cashHolding: CashHolding, updateTimestamp: Long) extends Response
+  case class CashFlowHistoryDeletedResponse(cashHolding: CashHolding, updateTimestamp: Long) extends Response
+  case class CashFlowHistoryUpdatedResponse(cashHolding: CashHolding, updateTimestamp: Long) extends Response
 
   case object NoPortfolioException extends ClientException(404, "NoPortfolioException", "Portfolio does not exist") with Response
   case object AlreadyPortfolioException extends ClientException(404, "AlreadyPortfolioException", "Portfolio already exist") with Response
@@ -246,7 +249,9 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
         case Some(cash) => cash.containHistory(cashFlowHistory) match {
           case true => Effect.reply(replyTo)(InvalidParameterException)
           case false => Effect.persist(CashFlowHistoryAdded(cashFlowHistory, Timestamp.now))
-            .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+            .thenReply(replyTo)(e =>
+              CashFlowHistoryAddedResponse(e.state.get.getHoldingCash(cashFlowHistory.country).get
+                , e.state.get.updateTimestamp))
         }
       }
     }
@@ -257,7 +262,9 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
         case None => Effect.reply(replyTo)(InvalidParameterException)
         case Some(cash) => cash.findHistory(cashFlowHistory.id) match {
             case Some(lastHistory) => Effect.persist(CashFlowHistoryUpdated(lastHistory, cashFlowHistory, Timestamp.now))
-              .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+              .thenReply(replyTo)(e =>
+                CashFlowHistoryUpdatedResponse(e.state.get.getHoldingCash(cashFlowHistory.country).get
+                  , e.state.get.updateTimestamp))
             case None => Effect.reply(replyTo)(NotFoundHistoryException)
           }
         }
@@ -269,7 +276,9 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
         case None => Effect.reply(replyTo)(InvalidParameterException)
         case Some(cash) => cash.findHistory(cashFlowHistoryId) match {
             case Some(cashFlowHistory) => Effect.persist(CashFlowHistoryDeleted(cashFlowHistory, Timestamp.now))
-              .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+              .thenReply(replyTo)(e =>
+                CashFlowHistoryDeletedResponse(e.state.get.getHoldingCash(country).get
+                  , e.state.get.updateTimestamp))
             case None => Effect.reply(replyTo)(NotFoundHistoryException)
           }
         }

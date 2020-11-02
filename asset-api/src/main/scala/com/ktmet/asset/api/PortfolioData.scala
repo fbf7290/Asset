@@ -375,7 +375,7 @@ object StockHoldingMap {
 
 case class CashFlowHistory(id: String, flowType: FlowType
                            , country: Country
-                           , amount: BigDecimal, timestamp: Long){
+                           , balance: BigDecimal, timestamp: Long){
   override def canEqual(a: Any): Boolean = a.isInstanceOf[CashFlowHistory]
 
   override def equals(that: Any): Boolean =
@@ -434,16 +434,16 @@ case class CashHolding(country: Country, amount: BigDecimal, cashFlowHistories: 
         case Nil => (preList += history).toList
       }
     val amount = history.flowType match {
-      case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => this.amount + history.amount
-      case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT => this.amount - history.amount
+      case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => this.amount + history.balance
+      case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT => this.amount - history.balance
     }
     copy(amount = amount, cashFlowHistories = add(cashFlowHistories, ListBuffer.empty))
   }
   def removeHistory(history: CashFlowHistory): CashHolding =
     history.flowType match {
-      case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => copy(amount = amount - history.amount
+      case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => copy(amount = amount - history.balance
         , cashFlowHistories = cashFlowHistories.filterNot(_ == history))
-      case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT  => copy(amount = amount + history.amount
+      case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT  => copy(amount = amount + history.balance
         , cashFlowHistories = cashFlowHistories.filterNot(_ == history))
     }
   def addHistories(histories: Seq[CashFlowHistory]): CashHolding = histories.foldLeft(this){

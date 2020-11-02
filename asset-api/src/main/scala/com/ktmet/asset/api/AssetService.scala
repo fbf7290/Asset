@@ -2,7 +2,7 @@ package com.ktmet.asset.api
 
 import akka.{Done, NotUsed}
 import com.asset.collector.api.{KrwUsd, NowPrice, Stock}
-import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CreatingPortfolioMessage, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, PortfolioCreatedMessage, RefreshingTokenMessage, SocialLoggingInMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingGoalAssetRatioMessage, UpdatingTradeHistoryMessage, UserMessage}
+import com.ktmet.asset.api.message.{AddingCashFlowHistory, AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, PortfolioCreatedMessage, RefreshingTokenMessage, SocialLoggingInMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingTradeHistoryMessage, UserMessage}
 import com.ktmet.asset.common.api.ClientExceptionSerializer
 import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Descriptor, Service, ServiceAcl, ServiceCall}
@@ -35,6 +35,8 @@ trait AssetService extends Service{
   def deleteTradeHistory(portfolioId: String): ServiceCall[DeletingTradeHistoryMessage, TradeHistoryDeletedMessage]
   def updateTradeHistory(portfolioId: String): ServiceCall[UpdatingTradeHistoryMessage, TradeHistoryUpdatedMessage]
   def addCashFlowHistory(portfolioId: String): ServiceCall[AddingCashFlowHistory, CashFlowHistoryAddedMessage]
+  def deleteCashFlowHistory(portfolioId: String): ServiceCall[DeletingCashFlowHistory, CashFlowHistoryDeletedMessage]
+  def updateCashFlowHistory(portfolioId: String): ServiceCall[UpdatingCashFlowHistory, CashFlowHistoryUpdatedMessage]
 
 
 
@@ -64,9 +66,12 @@ trait AssetService extends Service{
         restCall(Method.POST, "/portfolio/:portfolioId/goal", updateGoalAssetRatio _),
         restCall(Method.POST, "/portfolio/:portfolioId/stock", addStock _),
         restCall(Method.DELETE, "/portfolio/:portfolioId/stock", deleteStock _),
-        restCall(Method.POST, "/portfolio/:portfolioId/stock/history", addTradeHistory _),
+        restCall(Method.PUT, "/portfolio/:portfolioId/stock/history", addTradeHistory _),
         restCall(Method.DELETE, "/portfolio/:portfolioId/stock/history", deleteTradeHistory _),
-        restCall(Method.PUT, "/portfolio/:portfolioId/stock/history", updateTradeHistory _),
+        restCall(Method.POST, "/portfolio/:portfolioId/stock/history", updateTradeHistory _),
+        restCall(Method.PUT, "/portfolio/:portfolioId/cash/history", addCashFlowHistory _),
+        restCall(Method.DELETE, "/portfolio/:portfolioId/cash/history", deleteCashFlowHistory _),
+        restCall(Method.POST, "/portfolio/:portfolioId/cash/history", updateCashFlowHistory _),
 
         restCall(Method.GET, "/test", test)
 
