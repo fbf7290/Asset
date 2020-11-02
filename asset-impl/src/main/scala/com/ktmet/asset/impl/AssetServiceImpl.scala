@@ -19,7 +19,7 @@ import akka.serialization.{SerializationExtension, Serializers}
 import com.asset.collector.api.Country.Country
 import com.ktmet.asset.api.CashFlowHistory.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType
-import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CreatingPortfolioMessage, DeletingStockMessage, DeletingTradeHistoryMessage, PortfolioCreatedMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, UpdatingGoalAssetRatioMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CreatingPortfolioMessage, DeletingStockMessage, DeletingTradeHistoryMessage, PortfolioCreatedMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingGoalAssetRatioMessage, UpdatingTradeHistoryMessage}
 import com.ktmet.asset.common.api.ClientException
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
@@ -224,6 +224,28 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
         .collect{
           case PortfolioEntity.TradeHistoryDeletedResponse(stockHolding, cashHolding, updateTimestamp) =>
             (ResponseHeader.Ok.withStatus(200), TradeHistoryDeletedMessage(stockHolding, cashHolding, updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
+
+  override def updateTradeHistory(portfolioId: String): ServiceCall[UpdatingTradeHistoryMessage, TradeHistoryUpdatedMessage] = authenticate { userId =>
+    ServerServiceCall{ (_, updatingTradeHistoryMessage) =>
+      val historySet = updatingTradeHistoryMessage.tradeType match {
+        case TradeType.BUY =>
+          HistorySet(BuyTradeHistory(updatingTradeHistoryMessage.tradeHistoryId, updatingTradeHistoryMessage.tradeType
+            , updatingTradeHistoryMessage.stock, updatingTradeHistoryMessage.amount, updatingTradeHistoryMessage.price
+            , updatingTradeHistoryMessage.timestamp, UUID.randomString))
+        case TradeType.SELL =>
+          HistorySet(SellTradeHistory(updatingTradeHistoryMessage.tradeHistoryId, updatingTradeHistoryMessage.tradeType
+            , updatingTradeHistoryMessage.stock, updatingTradeHistoryMessage.amount, updatingTradeHistoryMessage.price
+            , updatingTradeHistoryMessage.timestamp, UUID.randomString, BigDecimal(0)))
+      }
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.UpdateTradeHistory(userId, historySet, reply))
+        .collect{
+          case PortfolioEntity.TradeHistoryUpdatedResponse(stockHolding, cashHolding, updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), TradeHistoryUpdatedMessage(stockHolding, cashHolding, updateTimestamp))
           case m: ClientException => throw m
         }
     }

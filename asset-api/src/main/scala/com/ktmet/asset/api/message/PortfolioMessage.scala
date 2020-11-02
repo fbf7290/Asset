@@ -2,6 +2,7 @@ package com.ktmet.asset.api.message
 
 import com.asset.collector.api.Country.Country
 import com.asset.collector.api.Stock
+import com.ktmet.asset.api.CashFlowHistory.FlowType.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType.TradeType
 import com.ktmet.asset.api.message.AddingStockMessage.AddingTradeHistory
 import com.ktmet.asset.api.{CashFlowHistory, CashHolding, CashRatio, Category, StockHolding, StockRatio}
@@ -89,4 +90,31 @@ case class TradeHistoryDeletedMessage(stockHolding: StockHolding
                                     , cashHolding: CashHolding, updateTimestamp: Long)
 object TradeHistoryDeletedMessage {
   implicit val format:Format[TradeHistoryDeletedMessage] = Json.format
+}
+
+case class UpdatingTradeHistoryMessage(stock: Stock
+                                       , tradeHistoryId: String
+                                       , tradeType: TradeType
+                                       , amount: Int
+                                       , price: BigDecimal
+                                       , timestamp: Long)
+object UpdatingTradeHistoryMessage {
+  implicit val format:Format[UpdatingTradeHistoryMessage] = Json.format
+}
+case class TradeHistoryUpdatedMessage(stockHolding: StockHolding
+                                      , cashHolding: CashHolding, updateTimestamp: Long)
+object TradeHistoryUpdatedMessage {
+  implicit val format:Format[TradeHistoryUpdatedMessage] = Json.format
+}
+
+case class AddingCashFlowHistory(flowType: FlowType
+                                       , amount: Int
+                                       , country: Country
+                                       , timestamp: Long)
+object AddingCashFlowHistory {
+  implicit val format:Format[AddingCashFlowHistory] = Json.format
+}
+case class CashFlowHistoryAddedMessage(cashHolding: CashHolding, updateTimestamp: Long)
+object CashFlowHistoryAddedMessage {
+  implicit val format:Format[TradeHistoryUpdatedMessage] = Json.format
 }

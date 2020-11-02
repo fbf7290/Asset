@@ -312,8 +312,6 @@ case class StockHolding(stock: Stock, amount: Int
   }
   def removeHistory(history: TradeHistory): Either[StockHolding, StockHolding] = {
     val res = copy(tradeHistories = tradeHistories.filterNot(_ == history))
-    println(res)
-    println(history)
     res.isValid match {
       case true =>
         Right(res.calcAmountAndAvgPrice.calcRealized)
