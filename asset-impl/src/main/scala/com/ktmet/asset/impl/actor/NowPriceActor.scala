@@ -18,6 +18,7 @@ object NowPriceActor {
   case object CollectTimer extends Command
   case class GetPrice(code:String, replyTo:ActorRef[Response]) extends Command
   case class GetKrwUsd(replyTo:ActorRef[Response]) extends Command
+  case class GetPrice(stocks:)
 
   sealed trait Response
   case class PriceResponse(price:NowPrice) extends Response

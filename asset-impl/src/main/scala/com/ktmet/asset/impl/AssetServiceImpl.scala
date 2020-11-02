@@ -26,6 +26,7 @@ import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
 import com.lightbend.lagom.scaladsl.api.transport.{BadRequest, ResponseHeader}
 import com.lightbend.lagom.scaladsl.server.ServerServiceCall
 import io.jvm.uuid._
+import play.api.libs.json.Json
 
 
 
@@ -163,7 +164,7 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
         history.tradeType match {
           case TradeType.BUY =>
             HistorySet(BuyTradeHistory(tradeId, history.tradeType
-              , addingStockMessage.stock, history.amount, history.price, history.timestamp, cashId))
+              , addingStockMessage.stock, history.amount, history.price, history.timestamp, None, None, cashId))
           case TradeType.SELL =>
             HistorySet(SellTradeHistory(tradeId, history.tradeType
               , addingStockMessage.stock, history.amount, history.price, history.timestamp, cashId, BigDecimal(0), BigDecimal(0)))
@@ -201,7 +202,7 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
         case TradeType.BUY =>
           HistorySet(BuyTradeHistory(tradeId, addingTradeHistoryMessage.tradeType
             , addingTradeHistoryMessage.stock, addingTradeHistoryMessage.amount, addingTradeHistoryMessage.price
-            , addingTradeHistoryMessage.timestamp, cashId))
+            , addingTradeHistoryMessage.timestamp, None, None, cashId))
         case TradeType.SELL =>
           HistorySet(SellTradeHistory(tradeId, addingTradeHistoryMessage.tradeType
             , addingTradeHistoryMessage.stock, addingTradeHistoryMessage.amount, addingTradeHistoryMessage.price
@@ -237,7 +238,7 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
         case TradeType.BUY =>
           HistorySet(BuyTradeHistory(updatingTradeHistoryMessage.tradeHistoryId, updatingTradeHistoryMessage.tradeType
             , updatingTradeHistoryMessage.stock, updatingTradeHistoryMessage.amount, updatingTradeHistoryMessage.price
-            , updatingTradeHistoryMessage.timestamp, UUID.randomString))
+            , updatingTradeHistoryMessage.timestamp, None, None, UUID.randomString))
         case TradeType.SELL =>
           HistorySet(SellTradeHistory(updatingTradeHistoryMessage.tradeHistoryId, updatingTradeHistoryMessage.tradeType
             , updatingTradeHistoryMessage.stock, updatingTradeHistoryMessage.amount, updatingTradeHistoryMessage.price
@@ -310,35 +311,42 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
   override def test: ServiceCall[NotUsed, Done] =
     ServerServiceCall{ (_, updatingGoalAssetRatioMessage) =>
 
-      val serialization = SerializationExtension(system)
 
-//      case class GoalAssetRatio(stockRatios: Map[Category, List[StockRatio]]
-//                                , cashRatios: Map[Category, List[CashRatio]])
-//      case class AssetCategory(stockCategory: Map[Category, List[StockRatio]], cashCategory: Map[Category, List[StockRatio]])
-      // Have something to serialize
-//      val original = PortfolioEntity.PortfolioResponse(PortfolioState.empty)
-      val asset = AssetCategory(Map(Category("10")->List(Stock(Country.USA, Market.ETF, "123","13"))), Map(Category.CashCategory -> List(Country.USA, Country.KOREA)))
+      val a = UpdatingGoalAssetRatioMessage(Map("123" -> List(StockRatio(Stock(Country.KOREA, Market.AMEX, "123", "123"), 1))),
+        Map("123" -> List(CashRatio(Country.KOREA, 1))), Map("123"-> List(Stock(Country.KOREA, Market.AMEX, "123", "123"))),
+        Map("123" -> List(Country.KOREA))
+      )
+      println(Json.toJson(a))
 
-      val stock = Stock(Country.USA, Market.ETF, "123","13")
-      val goal = GoalAssetRatio(Map(Category("10")->List(StockRatio(Stock(Country.USA, Market.ETF, "123","13"), 10))), Map(Category.CashCategory ->List(CashRatio(Country.USA, 10))))
-      val tradeHistory = SellTradeHistory("123", TradeType.BUY, Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10),  123, "123", BigDecimal(10), BigDecimal(0))
-      val cashHistory = CashFlowHistory("123", FlowType.SOLDAMOUNT, Country.USA, BigDecimal(10), 123)
-      val stockHolding = StockHolding(Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10), BigDecimal(10),  List(tradeHistory))
-      val stockHoldingMap = StockHoldingMap(Map(stock -> stockHolding))
-      val cashHolding = CashHolding(Country.USA, BigDecimal(0), List(cashHistory))
-      val state = PortfolioState(PortfolioId("123"), "123", 0, UserId("123"), goal, asset, Holdings(stockHoldingMap, CashHoldingMap(Map(Country.USA->cashHolding))))
-//      val original = PortfolioEntity.PortfolioResponse(state)
-      val original = state
-      // Turn it into bytes, and retrieve the serializerId and manifest, which are needed for deserialization
-      val bytes = serialization.serialize(original).get
-      val serializerId = serialization.findSerializerFor(original).identifier
-      val manifest = Serializers.manifestFor(serialization.findSerializerFor(original), original)
-
-      // Turn it back into an object
-      val back = serialization.deserialize(bytes, serializerId, manifest).get
-      println(back)
-
-      println(back)
+//      val serialization = SerializationExtension(system)
+//
+////      case class GoalAssetRatio(stockRatios: Map[Category, List[StockRatio]]
+////                                , cashRatios: Map[Category, List[CashRatio]])
+////      case class AssetCategory(stockCategory: Map[Category, List[StockRatio]], cashCategory: Map[Category, List[StockRatio]])
+//      // Have something to serialize
+////      val original = PortfolioEntity.PortfolioResponse(PortfolioState.empty)
+//      val asset = AssetCategory(Map(Category("10")->List(Stock(Country.USA, Market.ETF, "123","13"))), Map(Category.CashCategory -> List(Country.USA, Country.KOREA)))
+//
+//      val stock = Stock(Country.USA, Market.ETF, "123","13")
+//      val goal = GoalAssetRatio(Map(Category("10")->List(StockRatio(Stock(Country.USA, Market.ETF, "123","13"), 10))), Map(Category.CashCategory ->List(CashRatio(Country.USA, 10))))
+//      val tradeHistory = SellTradeHistory("123", TradeType.BUY, Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10),  123, "123", BigDecimal(10), BigDecimal(0))
+//      val cashHistory = CashFlowHistory("123", FlowType.SOLDAMOUNT, Country.USA, BigDecimal(10), 123)
+//      val stockHolding = StockHolding(Stock(Country.USA, Market.ETF, "123","13"), 10, BigDecimal(10), BigDecimal(10),  List(tradeHistory))
+//      val stockHoldingMap = StockHoldingMap(Map(stock -> stockHolding))
+//      val cashHolding = CashHolding(Country.USA, BigDecimal(0), List(cashHistory))
+//      val state = PortfolioState(PortfolioId("123"), "123", 0, UserId("123"), goal, asset, Holdings(stockHoldingMap, CashHoldingMap(Map(Country.USA->cashHolding))))
+////      val original = PortfolioEntity.PortfolioResponse(state)
+//      val original = state
+//      // Turn it into bytes, and retrieve the serializerId and manifest, which are needed for deserialization
+//      val bytes = serialization.serialize(original).get
+//      val serializerId = serialization.findSerializerFor(original).identifier
+//      val manifest = Serializers.manifestFor(serialization.findSerializerFor(original), original)
+//
+//      // Turn it back into an object
+//      val back = serialization.deserialize(bytes, serializerId, manifest).get
+//      println(back)
+//
+//      println(back)
 
 
       Future.successful(ResponseHeader.Ok.withStatus(200), Done)

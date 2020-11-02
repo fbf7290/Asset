@@ -5,7 +5,8 @@ import com.asset.collector.api.Stock
 import com.ktmet.asset.api.CashFlowHistory.FlowType.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType.TradeType
 import com.ktmet.asset.api.message.AddingStockMessage.AddingTradeHistory
-import com.ktmet.asset.api.{CashFlowHistory, CashHolding, CashRatio, Category, StockHolding, StockRatio}
+import com.ktmet.asset.api.message.PortfolioStatusMessage.{AssetRatio, StockStatus}
+import com.ktmet.asset.api.{AssetCategory, CashFlowHistory, CashHolding, CashRatio, Category, StockHolding, StockRatio, TradeHistory}
 import play.api.libs.json.{Format, Json}
 
 case class TimestampMessage(updateTimestamp: Long)
@@ -154,4 +155,40 @@ object UpdatingStockCategory {
 case class StockCategoryUpdatedMessage(updateTimestamp: Long)
 object StockCategoryUpdatedMessage {
   implicit val format:Format[StockCategoryUpdatedMessage] = Json.format
+}
+
+
+case class PortfolioStatusMessage(totalAsset: BigDecimal, profitBalance: BigDecimal
+                                  ,profitProfit: BigDecimal, realizedProfitBalance: BigDecimal
+                                  ,boughtBalance: BigDecimal
+                                  , assetCategory: AssetCategory, assetRatio: AssetRatio
+                                  , cashStatus: Map[Country, CashHolding]
+                                  , stockStatus: Map[Stock, StockStatus])
+object PortfolioStatusMessage {
+  implicit val format:Format[PortfolioStatusMessage] = Json.format
+
+  case class StockStatus(stock: Stock, amount: Int, avgPrice: BigDecimal
+                         , nowPrice: BigDecimal, profitBalance: BigDecimal
+                         , profitRate: BigDecimal, realizedProfitBalance: BigDecimal
+                         , boughtBalance: BigDecimal, evaluatedBalance: BigDecimal
+                         , tradeHistories: List[TradeHistory])
+  object StockStatus {
+    implicit val format:Format[StockStatus] = Json.format
+  }
+
+  case class StockRatio(stock: Stock, goalRatio: Int, nowRatio: BigDecimal)
+  object StockRatio{
+    implicit val format:Format[StockRatio] = Json.format
+  }
+  case class CashRatio(country: Country, goalRatio: Int, nowRatio: BigDecimal)
+  object CashRatio{
+    implicit val format:Format[CashRatio] = Json.format
+
+  }
+
+  case class AssetRatio(stockRatios: Map[Category, List[StockRatio]]
+                       , cashRatios: Map[Category, List[CashRatio]])
+  object AssetRatio{
+    implicit val format:Format[AssetRatio] = Json.format
+  }
 }

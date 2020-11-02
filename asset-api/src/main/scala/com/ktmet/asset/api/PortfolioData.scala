@@ -187,13 +187,14 @@ sealed trait TradeHistory extends Equals with Ordered[TradeHistory]{
 }
 case class BuyTradeHistory(id: String, tradeType: TradeType, stock: Stock
                            , amount: Int, price: BigDecimal, timestamp: Long
+                            , profitBalance: Option[BigDecimal], profitRate: Option[BigDecimal]
                            , cashHistoryId: String) extends TradeHistory
 object BuyTradeHistory {
   implicit val format:Format[BuyTradeHistory] = Json.format
 }
 case class SellTradeHistory(id: String, tradeType: TradeType, stock: Stock
-                           , amount: Int, price: BigDecimal, timestamp: Long
-                           , cashHistoryId: String, realizedBalance: BigDecimal, realizedProfit: BigDecimal) extends TradeHistory
+                            , amount: Int, price: BigDecimal, timestamp: Long
+                            , cashHistoryId: String, realizedProfitBalance: BigDecimal, realizedProfitRate: BigDecimal) extends TradeHistory
 object SellTradeHistory {
   implicit val format:Format[SellTradeHistory] = Json.format
 }
@@ -245,7 +246,7 @@ object TradeHistory {
 
 
 case class StockHolding(stock: Stock, amount: Int
-                        , avgPrice: BigDecimal, realizedBalance: BigDecimal
+                        , avgPrice: BigDecimal, realizedProfitBalance: BigDecimal
                         , tradeHistories: List[TradeHistory]){
   def containHistory(history: TradeHistory): Boolean =
     tradeHistories.find(elem => elem == history).fold(false)(_=>true)
@@ -276,13 +277,13 @@ case class StockHolding(stock: Stock, amount: Int
         tBuyAmount += pBuyAmount
         tBuyTotalPrice += pBuyTotalPrice
         val diff =  history.price - tBuyTotalPrice/tBuyAmount
-        history.copy(realizedBalance = (diff * history.amount).setScale(2, BigDecimal.RoundingMode.HALF_UP)
-            , realizedProfit = (diff/(tBuyTotalPrice/tBuyAmount) * 100).setScale(2, BigDecimal.RoundingMode.HALF_UP))
+        history.copy(realizedProfitBalance = (diff * history.amount).setScale(2, BigDecimal.RoundingMode.HALF_UP)
+            , realizedProfitRate = (diff/(tBuyTotalPrice/tBuyAmount) * 100).setScale(2, BigDecimal.RoundingMode.HALF_UP))
     }.reverse
     if(tSellAmount == 0) copy(tradeHistories = histories)
     else {
       val diff = tSellTotalPrice/tSellAmount - tBuyTotalPrice/tBuyAmount
-        copy(realizedBalance = (diff * tSellAmount).setScale(3, BigDecimal.RoundingMode.HALF_UP)
+        copy(realizedProfitBalance = (diff * tSellAmount).setScale(3, BigDecimal.RoundingMode.HALF_UP)
         , tradeHistories =  histories)
     }
   }
