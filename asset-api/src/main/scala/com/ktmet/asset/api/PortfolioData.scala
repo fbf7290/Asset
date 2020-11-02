@@ -166,7 +166,7 @@ sealed trait TradeHistory extends Equals with Ordered[TradeHistory]{
 
   override def equals(that: Any): Boolean =
     that match {
-      case that: CashFlowHistory =>
+      case that: TradeHistory =>
         that.canEqual(this) && this.hashCode == that.hashCode
       case _ => false
     }
@@ -312,6 +312,8 @@ case class StockHolding(stock: Stock, amount: Int
   }
   def removeHistory(history: TradeHistory): Either[StockHolding, StockHolding] = {
     val res = copy(tradeHistories = tradeHistories.filterNot(_ == history))
+    println(res)
+    println(history)
     res.isValid match {
       case true =>
         Right(res.calcAmountAndAvgPrice.calcRealized)

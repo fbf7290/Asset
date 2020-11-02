@@ -2,7 +2,7 @@ package com.ktmet.asset.api
 
 import akka.{Done, NotUsed}
 import com.asset.collector.api.{KrwUsd, NowPrice, Stock}
-import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CreatingPortfolioMessage, DeletingStockMessage, LoginMessage, PortfolioCreatedMessage, RefreshingTokenMessage, SocialLoggingInMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, UpdatingGoalAssetRatioMessage, UserMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CreatingPortfolioMessage, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, PortfolioCreatedMessage, RefreshingTokenMessage, SocialLoggingInMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, UpdatingGoalAssetRatioMessage, UserMessage}
 import com.ktmet.asset.common.api.ClientExceptionSerializer
 import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Descriptor, Service, ServiceAcl, ServiceCall}
@@ -32,6 +32,7 @@ trait AssetService extends Service{
   def addStock(portfolioId: String): ServiceCall[AddingStockMessage, StockAddedMessage]
   def deleteStock(portfolioId: String): ServiceCall[DeletingStockMessage, StockDeletedMessage]
   def addTradeHistory(portfolioId: String): ServiceCall[AddingTradeHistoryMessage, TradeHistoryAddedMessage]
+  def deleteTradeHistory(portfolioId: String): ServiceCall[DeletingTradeHistoryMessage, TradeHistoryDeletedMessage]
 
 
 
@@ -52,7 +53,7 @@ trait AssetService extends Service{
 
         restCall(Method.GET, "/search/prefix/:prefix", autoCompleteStock _),
         restCall(Method.GET, "/stock/now/:code", getNowPrice _),
-        restCall(Method.GET, "/krwusd1", getNowKrwUsd _),
+        restCall(Method.GET, "/krwusd", getNowKrwUsd _),
 
         restCall(Method.POST, "/portfolio", createPortfolio),
         restCall(Method.DELETE, "/portfolio/:portfolioId", deletePortfolio _),
@@ -62,6 +63,7 @@ trait AssetService extends Service{
         restCall(Method.POST, "/portfolio/:portfolioId/stock", addStock _),
         restCall(Method.DELETE, "/portfolio/:portfolioId/stock", deleteStock _),
         restCall(Method.POST, "/portfolio/:portfolioId/stock/history", addTradeHistory _),
+        restCall(Method.DELETE, "/portfolio/:portfolioId/stock/history", deleteTradeHistory _),
 
         restCall(Method.GET, "/test", test)
 

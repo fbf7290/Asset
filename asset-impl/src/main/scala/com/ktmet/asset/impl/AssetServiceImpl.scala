@@ -19,7 +19,7 @@ import akka.serialization.{SerializationExtension, Serializers}
 import com.asset.collector.api.Country.Country
 import com.ktmet.asset.api.CashFlowHistory.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType
-import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CreatingPortfolioMessage, DeletingStockMessage, PortfolioCreatedMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, UpdatingGoalAssetRatioMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CreatingPortfolioMessage, DeletingStockMessage, DeletingTradeHistoryMessage, PortfolioCreatedMessage, StockAddedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, UpdatingGoalAssetRatioMessage}
 import com.ktmet.asset.common.api.ClientException
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
@@ -211,6 +211,19 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
         .collect{
           case PortfolioEntity.TradeHistoryAddedResponse(stockHolding, cashHolding, updateTimestamp) =>
             (ResponseHeader.Ok.withStatus(200), TradeHistoryAddedMessage(stockHolding, cashHolding, updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
+
+  override def deleteTradeHistory(portfolioId: String): ServiceCall[DeletingTradeHistoryMessage, TradeHistoryDeletedMessage] = authenticate { userId =>
+    ServerServiceCall{ (_, deletingTradeHistoryMessage) =>
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.DeleteTradeHistory(userId, deletingTradeHistoryMessage.stock
+          , deletingTradeHistoryMessage.tradeHistoryId, reply))
+        .collect{
+          case PortfolioEntity.TradeHistoryDeletedResponse(stockHolding, cashHolding, updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), TradeHistoryDeletedMessage(stockHolding, cashHolding, updateTimestamp))
           case m: ClientException => throw m
         }
     }

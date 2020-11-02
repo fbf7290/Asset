@@ -44,6 +44,7 @@ object PortfolioEntity {
   case class StockDeletedResponse(cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class PortfolioResponse(portfolioState: PortfolioState) extends Response
   case class TradeHistoryAddedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
+  case class TradeHistoryDeletedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
 
   case object NoPortfolioException extends ClientException(404, "NoPortfolioException", "Portfolio does not exist") with Response
   case object AlreadyPortfolioException extends ClientException(404, "AlreadyPortfolioException", "Portfolio already exist") with Response
@@ -321,7 +322,9 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
                   case Some(cash) => cash.findHistory(tradeHistory.cashHistoryId) match {
                       case Some(cashFlowHistory) =>
                         Effect.persist(TradeHistoryDeleted(tradeHistory, cashFlowHistory, Timestamp.now))
-                          .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+                          .thenReply(replyTo)(e =>
+                            TradeHistoryDeletedResponse(e.state.get.getHoldingStock(stock).get
+                              , e.state.get.getHoldingCash(stock.country).get, e.state.get.updateTimestamp))
                       case None => Effect.reply(replyTo)(InvalidParameterException)
                     }
                   case None => Effect.reply(replyTo)(InvalidParameterException)
