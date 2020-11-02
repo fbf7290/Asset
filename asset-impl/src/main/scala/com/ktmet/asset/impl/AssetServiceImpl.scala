@@ -308,6 +308,38 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
     }
   }
 
+  override def getPortfolioStatus(portfolioId: String): ServiceCall[NotUsed, Done] = authenticate { userId =>
+    ServerServiceCall{ (_, _) =>
+      def getPortfolio: Future[PortfolioState] =
+        portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+          PortfolioEntity.GetPortfolio(reply))
+          .collect{
+            case PortfolioEntity.PortfolioResponse(portfolioState) => portfolioState
+            case m: ClientException => throw m
+          }
+      def getNowPrices(portfolioState: PortfolioState): Future[Map[Stock, BigDecimal]] =
+        nowPriceActor.ask[NowPriceActor.PricesResponse](reply =>
+          NowPriceActor.GetPrices(portfolioState.getHoldingAssets._1.toSeq, reply))
+          .map{ case NowPriceActor.PricesResponse(prices) =>
+            prices.map { case (stock, maybePrice) =>
+              maybePrice match {
+                case Some(nowPrice) => stock -> nowPrice.price
+                case None => stock -> portfolioState.getHoldingStock(stock).get.tradeHistories.headOption.fold(BigDecimal(0))(_.price)
+              }
+            }
+          }
+
+      for {
+        portfolioState <- getPortfolio
+        nowPrices <- getNowPrices(portfolioState)
+
+      } yield {
+        (ResponseHeader.Ok.withStatus(200), Done)
+      }
+    }
+  }
+
+
   override def test: ServiceCall[NotUsed, Done] =
     ServerServiceCall{ (_, updatingGoalAssetRatioMessage) =>
 
@@ -353,3 +385,4 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
     }
 
 }
+// TODO 상장폐지 종목에 대한 처리

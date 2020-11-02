@@ -4,7 +4,7 @@ import akka.NotUsed
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import com.asset.collector.api.Country.Country
-import com.asset.collector.api.{CollectorService, Country, KrwUsd, NowPrice}
+import com.asset.collector.api.{CollectorService, Country, KrwUsd, NowPrice, Stock}
 import com.ktmet.asset.common.api.Timestamp
 
 import scala.concurrent.duration._
@@ -18,10 +18,11 @@ object NowPriceActor {
   case object CollectTimer extends Command
   case class GetPrice(code:String, replyTo:ActorRef[Response]) extends Command
   case class GetKrwUsd(replyTo:ActorRef[Response]) extends Command
-  case class GetPrice(stocks:)
+  case class GetPrices(stocks: Seq[Stock], replyTo: ActorRef[PricesResponse]) extends Command
 
   sealed trait Response
   case class PriceResponse(price:NowPrice) extends Response
+  case class PricesResponse(prices: Map[Stock, Option[NowPrice]]) extends Response
   case class KrwUsdResponse(krwUsd: KrwUsd) extends Response
   case object NotFoundStock extends Response
 
@@ -51,7 +52,6 @@ object NowPriceActor {
                   , krwUsd: KrwUsd):Behavior[Command] =
             Behaviors.receiveMessage{
               case NowPrices(country, prices) =>
-                println(country)
                 country match {
                   case Country.KOREA =>
                     if(usaPrices.isEmpty) init(prices, usaPrices, krwUsd)
@@ -91,6 +91,10 @@ object NowPriceActor {
                       case None => replyTo ! NotFoundStock
                     }
                 }
+                Behaviors.same
+              case GetPrices(stocks, replyTo) =>
+                replyTo ! PricesResponse(stocks.foldLeft(Map.empty[Stock, Option[NowPrice]])((res, stock) =>
+                  res + (stock -> koreaPrices.get(stock.code.toUpperCase))))
                 Behaviors.same
               case GetKrwUsd(replyTo) =>
                 replyTo ! KrwUsdResponse(krwUsd)

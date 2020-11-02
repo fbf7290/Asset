@@ -38,6 +38,7 @@ trait AssetService extends Service{
   def deleteCashFlowHistory(portfolioId: String): ServiceCall[DeletingCashFlowHistory, CashFlowHistoryDeletedMessage]
   def updateCashFlowHistory(portfolioId: String): ServiceCall[UpdatingCashFlowHistory, CashFlowHistoryUpdatedMessage]
   def updateStockCategory(portfolioId: String): ServiceCall[UpdatingStockCategory, StockCategoryUpdatedMessage]
+  def getPortfolioStatus(portfolioId: String): ServiceCall[NotUsed, Done]
 
 
 
@@ -74,6 +75,7 @@ trait AssetService extends Service{
         restCall(Method.DELETE, "/portfolio/:portfolioId/cash/history", deleteCashFlowHistory _),
         restCall(Method.POST, "/portfolio/:portfolioId/cash/history", updateCashFlowHistory _),
         restCall(Method.POST, "/portfolio/:portfolioId/stock/category", updateStockCategory _),
+        restCall(Method.GET, "/portfolio/:portfolioId/status", updateStockCategory _),
 
         restCall(Method.GET, "/test", test)
 
