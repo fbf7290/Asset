@@ -61,6 +61,8 @@ object PortfolioEntity {
   case object NotFoundHistoryException extends ClientException(404, "NotFoundHistoryException", "NotFoundHistoryException") with Response
   case object NotFoundCategoryException extends ClientException(404, "NotFoundCategoryException", "NotFoundCategoryException") with Response
   case object NotFoundStockException extends ClientException(404, "NotFoundStockException", "NotFoundStockException") with Response
+  case object TooManyCategoryException extends ClientException(409, "TooManyPortfolioException", "Too many portfolio") with Response
+  case object TooManyStockException extends ClientException(409, "TooManyPortfolioException", "Too many portfolio") with Response
 
 
   sealed trait Event extends AggregateEvent[Event] {
@@ -227,19 +229,24 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
   private def onUpdateGoalAssetRatio(owner: UserId, goalAssetRatio: GoalAssetRatio
                                      , assetCategory: AssetCategory, replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithOwner(owner, replyTo){state =>
-      goalAssetRatio.isValid match {
-        case true => (assetCategory.getCategories -- goalAssetRatio.getCategories).size >= 0 match {
-          case true =>
-//              true match {
-            assetCategory.getAssets == state.getHoldingAssets match {
-              case true =>  Effect.persist(GoalAssetRatioUpdated(goalAssetRatio, assetCategory, Timestamp.now))
-                              .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+      goalAssetRatio.isLimitCategorySize match {
+        case false =>
+          goalAssetRatio.isValid match {
+            case true => (assetCategory.getCategories -- goalAssetRatio.getCategories).size >= 0 match {
+              case true =>
+                //              true match {
+                assetCategory.getAssets == state.getHoldingAssets match {
+                  case true =>  Effect.persist(GoalAssetRatioUpdated(goalAssetRatio, assetCategory, Timestamp.now))
+                    .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
+                  case false => Effect.reply(replyTo)(InvalidParameterException)
+                }
               case false => Effect.reply(replyTo)(InvalidParameterException)
-           }
-          case false => Effect.reply(replyTo)(InvalidParameterException)
-        }
-        case false => Effect.reply(replyTo)(InvalidParameterException)
+            }
+            case false => Effect.reply(replyTo)(InvalidParameterException)
+          }
+        case true => Effect.reply(replyTo)(TooManyCategoryException)
       }
+
     }
   private def onAddCashFlowHistory(owner: UserId, cashFlowHistory: CashFlowHistory
                                    , replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
@@ -287,26 +294,29 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
   private def onAddStock(owner: UserId, stock: Stock, category: Category
                          , historySets: Seq[HistorySet], replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithOwner(owner, replyTo){ state =>
-      state.containStock(stock) match {
-        case true => Effect.reply(replyTo)(AlreadyStockException)
-        case false => state.containCategory(category) match {
-          case true =>
-            val sortedSets = historySets.sortBy(_.tradeHistory).reverse
-            sortedSets.foldLeft(StockHolding.empty(stock).asRight[StockHolding]){
-              (holding, set) => holding match {
-                case Right(value) => value.addHistory(set.tradeHistory)
-                case Left(_) => holding
-              }
-            } match {
-              case Right(holding) => Effect.persist(StockAdded(stock ,category, holding
-                , sortedSets.map(_.cashFlowHistory), Timestamp.now))
-                .thenReply(replyTo)(e =>
-                  StockAddedResponse(e.state.get.getHoldingStock(stock).get
-                    , e.state.get.getHoldingCash(stock.country).get, e.state.get.updateTimestamp))
-              case Left(_) => Effect.reply(replyTo)(InvalidParameterException)
+      state.isLimitStockSize match {
+        case false => state.containStock(stock) match {
+            case true => Effect.reply(replyTo)(AlreadyStockException)
+            case false => state.containCategory(category) match {
+              case true =>
+                val sortedSets = historySets.sortBy(_.tradeHistory).reverse
+                sortedSets.foldLeft(StockHolding.empty(stock).asRight[StockHolding]){
+                  (holding, set) => holding match {
+                    case Right(value) => value.addHistory(set.tradeHistory)
+                    case Left(_) => holding
+                  }
+                } match {
+                  case Right(holding) => Effect.persist(StockAdded(stock ,category, holding
+                    , sortedSets.map(_.cashFlowHistory), Timestamp.now))
+                    .thenReply(replyTo)(e =>
+                      StockAddedResponse(e.state.get.getHoldingStock(stock).get
+                        , e.state.get.getHoldingCash(stock.country).get, e.state.get.updateTimestamp))
+                  case Left(_) => Effect.reply(replyTo)(InvalidParameterException)
+                }
+              case false => Effect.reply(replyTo)(NotFoundCategoryException)
             }
-          case false => Effect.reply(replyTo)(NotFoundCategoryException)
-        }
+          }
+        case true => Effect.reply(replyTo)(TooManyStockException)
       }
     }
   private def onAddTradeHistory(owner: UserId, historySet: HistorySet

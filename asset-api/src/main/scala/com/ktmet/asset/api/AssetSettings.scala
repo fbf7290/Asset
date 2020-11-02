@@ -37,4 +37,13 @@ object AssetSettings {
     case None => 2   // 유저 최대 포트폴리오 개수
   }
 
+  val maxCategorySize = sys.env.get("MAX_CATEGORY_SIZE") match {
+    case Some(value) => value.toInt
+    case None => 20
+  }
+
+  val maxStockSize = sys.env.get("MAX_STOCK_SIZE") match {
+    case Some(value) => value.toInt
+    case None => 50
+  }
 }

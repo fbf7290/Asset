@@ -53,6 +53,7 @@ object CashRatio{
 
 case class GoalAssetRatio(stockRatios: Map[Category, List[StockRatio]]
                           , cashRatios: Map[Category, List[CashRatio]]){
+  def isLimitCategorySize: Boolean = stockRatios.size >= AssetSettings.maxCategorySize
   def containCategory(category: Category): Boolean = stockRatios.contains(category)
   def addCategory(category: Category): GoalAssetRatio = copy(stockRatios = stockRatios + (category -> List.empty))
   def getCategoryRatios: Map[Category, Int] = stockRatios.map{ case (c, l) => c -> l.map(_.ratio).fold(0)(_+_)} ++
@@ -329,6 +330,7 @@ object StockHolding {
 @JsonSerialize(using = classOf[StockHoldingMapSerializer])
 @JsonDeserialize(using = classOf[StockHoldingMapDeserializer])
 case class StockHoldingMap(map: Map[Stock, StockHolding]){
+  def isLimitStockSize: Boolean = map.size >= AssetSettings.maxStockSize
   def containStock(stock: Stock): Boolean = map.contains(stock)
   def getAssets: Set[Stock] = map.keySet
   def getStock(stock: Stock): Option[StockHolding] = map.get(stock)
@@ -502,6 +504,7 @@ class CashHoldingMapDeserializer extends StdDeserializer[CashHoldingMap](classOf
 }
 
 case class Holdings(stockHoldingMap: StockHoldingMap, cashHoldingMap: CashHoldingMap){
+  def isLimitStockSize: Boolean = stockHoldingMap.isLimitStockSize
   def containStock(stock: Stock): Boolean = stockHoldingMap.containStock(stock)
   def getAssets: (Set[Stock], Set[Country]) = (stockHoldingMap.getAssets, cashHoldingMap.getAssets)
   def getStock(stock: Stock): Option[StockHolding] = stockHoldingMap.getStock(stock)
@@ -569,6 +572,7 @@ case class PortfolioState(portfolioId: PortfolioId, name: String, updateTimestam
   def addTradeHistory(tradeHistory: TradeHistory): PortfolioState = copy(holdings = holdings.addStockHistory(tradeHistory))
   def addStockHolding(stockHolding: StockHolding): PortfolioState = copy(holdings = holdings.addStockHolding(stockHolding))
   def removeStockHolding(stock: Stock): PortfolioState = copy(holdings = holdings.removeStockHolding(stock))
+  def isLimitStockSize: Boolean = holdings.isLimitStockSize
 }
 object PortfolioState {
   implicit val format:Format[PortfolioState] = Json.format
