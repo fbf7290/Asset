@@ -2,7 +2,7 @@ package com.ktmet.asset.impl
 
 import akka.{Done, NotUsed}
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
-import com.ktmet.asset.api.message.{CreatingPortfolioMessage, LoginMessage, PortfolioCreatedMessage, RefreshingTokenMessage, SocialLoggingInMessage, TokenMessage, UserMessage}
+import com.ktmet.asset.api.message.{CreatingPortfolioMessage, LoginMessage, PortfolioCreatedMessage, RefreshingToken, SocialLoggingIn, TokenMessage, UserMessage}
 import com.ktmet.asset.api.{AssetSettings, Token, UserId, UserState}
 import com.ktmet.asset.common.api.Exception.NotFoundException
 import com.ktmet.asset.impl.entity.UserEntity
@@ -45,9 +45,9 @@ trait UserServiceImplPart extends ImplBase with Authenticator {
   }
 
 
-  override def login: ServiceCall[SocialLoggingInMessage, LoginMessage] =
-    ServerServiceCall { (_, socialLoggingInMessage) =>
-      val (socialType, socialToken) = (socialLoggingInMessage.socialType, socialLoggingInMessage.socialToken)
+  override def login: ServiceCall[SocialLoggingIn, LoginMessage] =
+    ServerServiceCall { (_, socialLoggingIn) =>
+      val (socialType, socialToken) = (socialLoggingIn.socialType, socialLoggingIn.socialToken)
       this.getSocialId(socialType, socialToken).flatMap{
         case Some(socialId) =>
           val userId = UserId(UserId.userIdFormat(socialType, socialId))
@@ -80,10 +80,10 @@ trait UserServiceImplPart extends ImplBase with Authenticator {
     }
   }
 
-  override def refreshToken: ServiceCall[RefreshingTokenMessage, TokenMessage] =
-    ServerServiceCall{ (_, refreshingTokenMessage) =>
-      userEntityRef(refreshingTokenMessage.userId)
-        .ask[UserEntity.Response](reply => UserEntity.RefreshToken(Token(refreshingTokenMessage.accessToken, refreshingTokenMessage.refreshToken), reply))
+  override def refreshToken: ServiceCall[RefreshingToken, TokenMessage] =
+    ServerServiceCall{ (_, refreshingToken) =>
+      userEntityRef(refreshingToken.userId)
+        .ask[UserEntity.Response](reply => UserEntity.RefreshToken(Token(refreshingToken.accessToken, refreshingToken.refreshToken), reply))
         .collect{
           case m:UserEntity.TokenResponse => (ResponseHeader.Ok.withStatus(201), TokenMessage(m.accessToken, m.refreshToken))
           case UserEntity.TokenException => throw UserEntity.TokenException

@@ -193,7 +193,7 @@ object BuyTradeHistory {
 }
 case class SellTradeHistory(id: String, tradeType: TradeType, stock: Stock
                            , amount: Int, price: BigDecimal, timestamp: Long
-                           , cashHistoryId: String, realizedBalance: BigDecimal) extends TradeHistory
+                           , cashHistoryId: String, realizedBalance: BigDecimal, realizedProfit: BigDecimal) extends TradeHistory
 object SellTradeHistory {
   implicit val format:Format[SellTradeHistory] = Json.format
 }
@@ -276,7 +276,8 @@ case class StockHolding(stock: Stock, amount: Int
         tBuyAmount += pBuyAmount
         tBuyTotalPrice += pBuyTotalPrice
         val diff =  history.price - tBuyTotalPrice/tBuyAmount
-        history.copy(realizedBalance = (diff * history.amount).setScale(2, BigDecimal.RoundingMode.HALF_UP))
+        history.copy(realizedBalance = (diff * history.amount).setScale(2, BigDecimal.RoundingMode.HALF_UP)
+            , realizedProfit = (diff/(tBuyTotalPrice/tBuyAmount) * 100).setScale(2, BigDecimal.RoundingMode.HALF_UP))
     }.reverse
     if(tSellAmount == 0) copy(tradeHistories = histories)
     else {

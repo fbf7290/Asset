@@ -143,3 +143,15 @@ case class CashFlowHistoryUpdatedMessage(cashHolding: CashHolding, updateTimesta
 object CashFlowHistoryUpdatedMessage {
   implicit val format:Format[CashFlowHistoryUpdatedMessage] = Json.format
 }
+
+
+case class UpdatingStockCategory(stock: Stock
+                                , lastCategory: String
+                                , newCategory: String)
+object UpdatingStockCategory {
+  implicit val format:Format[UpdatingStockCategory] = Json.format
+}
+case class StockCategoryUpdatedMessage(updateTimestamp: Long)
+object StockCategoryUpdatedMessage {
+  implicit val format:Format[StockCategoryUpdatedMessage] = Json.format
+}
