@@ -344,10 +344,13 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
           }
         ){ case (realizedBalance, histories) =>
           StockStatus(stock = stockHolding.stock, amount = stockHolding.amount, avgPrice = stockHolding.avgPrice
-            , nowPrice = price, profitBalance = (price - stockHolding.avgPrice) * stockHolding.amount
-            , profitRate = (price / stockHolding.avgPrice - 1).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100
-            , realizedProfitBalance = realizedBalance, boughtBalance = stockHolding.avgPrice * stockHolding.amount
-            , evaluatedBalance = stockHolding.avgPrice * stockHolding.amount, tradeHistories = histories.reverse)
+              , nowPrice = price
+              , profitBalance = if(stockHolding.avgPrice == 0) BigDecimal(0)
+                                  else (price - stockHolding.avgPrice) * stockHolding.amount
+              , profitRate = if(stockHolding.avgPrice == 0) BigDecimal(0)
+                           else (price / stockHolding.avgPrice - 1).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100
+              , realizedProfitBalance = realizedBalance, boughtBalance = stockHolding.avgPrice * stockHolding.amount
+              , evaluatedBalance = price * stockHolding.amount, tradeHistories = histories.reverse)
         }
 
 
@@ -371,6 +374,7 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
             realizedProfitBalance += status.realizedProfitBalance * krwUsdRatio
             boughtBalance += status.boughtBalance * krwUsdRatio
           }
+
         cashStatus.map { case (cash, status) =>
           val krwUsdRatio = cash match {
             case Country.USA => krwUsd
@@ -379,25 +383,30 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
           evaluatedTotalAsset += status.balance * krwUsdRatio
           totalAsset += status.balance * krwUsdRatio
         }
+
         val stockRatios = portfolioState.getStockRatio.foldLeft(Map.empty[Category, List[PortfolioStatusMessage.StockRatio]]){
           case (result, (category, stockRatios)) =>
             result + (category -> stockRatios.foldLeft(List.empty[PortfolioStatusMessage.StockRatio]){
               (result, ratio) => PortfolioStatusMessage.StockRatio(ratio.stock, ratio.ratio
                 , stockStatus.get(ratio.stock).fold(BigDecimal(0))(i =>
-                  (i.evaluatedBalance/evaluatedTotalAsset).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100)) :: result
+                  if(evaluatedTotalAsset == 0) BigDecimal(0)
+                  else (i.evaluatedBalance/evaluatedTotalAsset - 1).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100)) :: result
               })
         }
         val cashRatios = portfolioState.getCashRatio.foldLeft(Map.empty[Category, List[PortfolioStatusMessage.CashRatio]]){
           case (result, (category, cashRatios)) =>
             result + (category -> cashRatios.foldLeft(List.empty[PortfolioStatusMessage.CashRatio]){
               (result, ratio) => PortfolioStatusMessage.CashRatio(ratio.country, ratio.ratio
-                , ((cashStatus.get(ratio.country).get.balance)/evaluatedTotalAsset).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100) :: result
+                , cashStatus.get(ratio.country).fold(BigDecimal(0))(i =>
+                  if(evaluatedTotalAsset == 0) BigDecimal(0)
+                  else (i.balance/evaluatedTotalAsset - 1).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100)) :: result
             })
         }
 
         (ResponseHeader.Ok.withStatus(200), PortfolioStatusMessage( evaluatedTotalAsset
           , profitBalance = profitBalance
-          , profitRate = (evaluatedTotalAsset/totalAsset).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100
+          , profitRate = if(totalAsset == 0) BigDecimal(0)
+                        else (evaluatedTotalAsset/totalAsset - 1).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100
           , realizedProfitBalance =  realizedProfitBalance
           , boughtBalance = boughtBalance, assetCategory = portfolioState.assetCategory
           , assetRatio = PortfolioStatusMessage.AssetRatio(stockRatios, cashRatios)

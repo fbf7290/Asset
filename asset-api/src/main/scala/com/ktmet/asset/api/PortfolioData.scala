@@ -276,11 +276,14 @@ case class StockHolding(stock: Stock, amount: Int
         tSellTotalPrice += history.price * history.amount
         tBuyAmount += pBuyAmount
         tBuyTotalPrice += pBuyTotalPrice
-        val diff =  history.price - tBuyTotalPrice/tBuyAmount
-        history.copy(realizedProfitBalance = (diff * history.amount).setScale(2, BigDecimal.RoundingMode.HALF_UP)
+        if(tBuyAmount == 0) history.copy(realizedProfitBalance = BigDecimal(0), realizedProfitRate = BigDecimal(0))
+        else{
+          val diff =  history.price - tBuyTotalPrice/tBuyAmount
+          history.copy(realizedProfitBalance = (diff * history.amount).setScale(2, BigDecimal.RoundingMode.HALF_UP)
             , realizedProfitRate = (diff/(tBuyTotalPrice/tBuyAmount) * 100).setScale(2, BigDecimal.RoundingMode.HALF_UP))
+        }
     }.reverse
-    if(tSellAmount == 0) copy(tradeHistories = histories)
+    if(tSellAmount == 0 || tBuyAmount == 0) copy(tradeHistories = histories)
     else {
       val diff = tSellTotalPrice/tSellAmount - tBuyTotalPrice/tBuyAmount
         copy(realizedProfitBalance = (diff * tSellAmount).setScale(3, BigDecimal.RoundingMode.HALF_UP)

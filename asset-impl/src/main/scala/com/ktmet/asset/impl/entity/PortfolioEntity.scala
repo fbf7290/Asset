@@ -239,15 +239,11 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
       goalAssetRatio.isLimitCategorySize match {
         case false =>
           goalAssetRatio.isValid match {
-            case true => (assetCategory.getCategories -- goalAssetRatio.getCategories).size >= 0 match {
-              case true =>
-//                              true match {
-
-                assetCategory.getAssets == state.getHoldingAssets  match {
-                  case true =>  Effect.persist(GoalAssetRatioUpdated(goalAssetRatio, assetCategory, Timestamp.now))
-                    .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
-                  case false => Effect.reply(replyTo)(InvalidParameterException)
-                }
+            case true => ((assetCategory.getCategories -- goalAssetRatio.getCategories).size == 0 &&
+              assetCategory.getAssets._1.toSet == state.getHoldingAssets._1 &&
+              assetCategory.getAssets._2.toSet == state.getHoldingAssets._2) match {
+              case true => Effect.persist(GoalAssetRatioUpdated(goalAssetRatio, assetCategory, Timestamp.now))
+                .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
               case false => Effect.reply(replyTo)(InvalidParameterException)
             }
             case false => Effect.reply(replyTo)(InvalidParameterException)
