@@ -331,19 +331,6 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
               }
             }, krwUsd.rate)
           }
-
-
-      def getNowPrices(portfolioState: PortfolioState): Future[Map[Stock, BigDecimal]] =
-        nowPriceActor.ask[NowPriceActor.PricesResponse](reply =>
-          NowPriceActor.GetPrices(portfolioState.getHoldingAssets._1.toSeq, reply))
-          .map{ case NowPriceActor.PricesResponse(prices) =>
-            prices.map { case (stock, maybePrice) =>
-              maybePrice match {
-                case Some(nowPrice) => stock -> nowPrice.price
-                case None => stock -> portfolioState.getHoldingStock(stock).get.tradeHistories.headOption.fold(BigDecimal(0))(_.price)
-              }
-            }
-          }
       def getStockStatus(price: BigDecimal, stockHolding: StockHolding): StockStatus =
         Functor[Id].map( stockHolding.tradeHistories.foldLeft((BigDecimal(0), List.empty[TradeHistory])) {
           case ((realizedProfitBalance, histories), history) =>
@@ -396,7 +383,8 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
           case (result, (category, stockRatios)) =>
             result + (category -> stockRatios.foldLeft(List.empty[PortfolioStatusMessage.StockRatio]){
               (result, ratio) => PortfolioStatusMessage.StockRatio(ratio.stock, ratio.ratio
-                , ((stockStatus.get(ratio.stock).get.evaluatedBalance)/evaluatedTotalAsset).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100) :: result
+                , stockStatus.get(ratio.stock).fold(BigDecimal(0))(i =>
+                  (i.evaluatedBalance/evaluatedTotalAsset).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100)) :: result
               })
         }
         val cashRatios = portfolioState.getCashRatio.foldLeft(Map.empty[Category, List[PortfolioStatusMessage.CashRatio]]){

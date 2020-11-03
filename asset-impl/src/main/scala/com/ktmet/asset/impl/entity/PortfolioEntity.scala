@@ -241,8 +241,9 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
           goalAssetRatio.isValid match {
             case true => (assetCategory.getCategories -- goalAssetRatio.getCategories).size >= 0 match {
               case true =>
-                              true match {
-//                assetCategory.getAssets == state.getHoldingAssets match {
+//                              true match {
+
+                assetCategory.getAssets == state.getHoldingAssets  match {
                   case true =>  Effect.persist(GoalAssetRatioUpdated(goalAssetRatio, assetCategory, Timestamp.now))
                     .thenReply(replyTo)(e => TimestampResponse(e.state.get.updateTimestamp))
                   case false => Effect.reply(replyTo)(InvalidParameterException)
