@@ -424,7 +424,7 @@ object CashFlowHistory {
   }
 }
 
-case class CashHolding(country: Country, amount: BigDecimal, cashFlowHistories: List[CashFlowHistory]){
+case class CashHolding(country: Country, balance: BigDecimal, cashFlowHistories: List[CashFlowHistory]){
   def containHistory(history: CashFlowHistory): Boolean =
     cashFlowHistories.find(elem => elem == history).fold(false)(_=>true)
   def findHistory(id: String): Option[CashFlowHistory] = cashFlowHistories.find(elem => elem.id == id)
@@ -438,16 +438,16 @@ case class CashHolding(country: Country, amount: BigDecimal, cashFlowHistories: 
         case Nil => (preList += history).toList
       }
     val amount = history.flowType match {
-      case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => this.amount + history.balance
-      case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT => this.amount - history.balance
+      case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => this.balance + history.balance
+      case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT => this.balance - history.balance
     }
-    copy(amount = amount, cashFlowHistories = add(cashFlowHistories, ListBuffer.empty))
+    copy(balance = amount, cashFlowHistories = add(cashFlowHistories, ListBuffer.empty))
   }
   def removeHistory(history: CashFlowHistory): CashHolding =
     history.flowType match {
-      case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => copy(amount = amount - history.balance
+      case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => copy(balance = balance - history.balance
         , cashFlowHistories = cashFlowHistories.filterNot(_ == history))
-      case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT  => copy(amount = amount + history.balance
+      case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT  => copy(balance = balance + history.balance
         , cashFlowHistories = cashFlowHistories.filterNot(_ == history))
     }
   def addHistories(histories: Seq[CashFlowHistory]): CashHolding = histories.foldLeft(this){
@@ -562,8 +562,12 @@ case class PortfolioState(portfolioId: PortfolioId, name: String, updateTimestam
   def addAssetCategory(category: Category, stock: Stock): PortfolioState = copy(assetCategory = assetCategory.addStock(category, stock))
   def containAssetCategory(category: Category, stock: Stock): Boolean = assetCategory.contain(category, stock)
   def removeAssetCategory(category: Category, stock: Stock): PortfolioState = copy(assetCategory = assetCategory.removeStock(category, stock))
+  def getStockRatio: Map[Category, List[StockRatio]] = goalAssetRatio.stockRatios
+  def getCashRatio: Map[Category, List[CashRatio]] = goalAssetRatio.cashRatios
   def getHoldingAssets: (Set[Stock], Set[Country]) = holdings.getAssets
   def getHoldingStock(stock: Stock): Option[StockHolding] = holdings.getStock(stock)
+  def getHoldingStocks: StockHoldingMap = holdings.stockHoldingMap
+  def getHoldingCashes: CashHoldingMap = holdings.cashHoldingMap
   def getHoldingCash(country: Country): Option[CashHolding] = holdings.getCash(country)
   def removeCashHistory(cashFlowHistory: CashFlowHistory): PortfolioState = copy(holdings = holdings.removeCashHistory(cashFlowHistory))
   def removeCashHistories(country: Country, cashFlowHistories: Seq[CashFlowHistory]): PortfolioState = copy(holdings = holdings.removeCashHistories(country, cashFlowHistories))

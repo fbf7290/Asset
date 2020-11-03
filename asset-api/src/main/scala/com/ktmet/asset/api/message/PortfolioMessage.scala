@@ -1,7 +1,7 @@
 package com.ktmet.asset.api.message
 
 import com.asset.collector.api.Country.Country
-import com.asset.collector.api.Stock
+import com.asset.collector.api.{Country, Stock}
 import com.ktmet.asset.api.CashFlowHistory.FlowType.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType.TradeType
 import com.ktmet.asset.api.message.AddingStockMessage.AddingTradeHistory
@@ -159,7 +159,7 @@ object StockCategoryUpdatedMessage {
 
 
 case class PortfolioStatusMessage(totalAsset: BigDecimal, profitBalance: BigDecimal
-                                  ,profitProfit: BigDecimal, realizedProfitBalance: BigDecimal
+                                  ,profitRate: BigDecimal, realizedProfitBalance: BigDecimal
                                   ,boughtBalance: BigDecimal
                                   , assetCategory: AssetCategory, assetRatio: AssetRatio
                                   , cashStatus: Map[Country, CashHolding]

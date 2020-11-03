@@ -19,11 +19,13 @@ object NowPriceActor {
   case class GetPrice(code:String, replyTo:ActorRef[Response]) extends Command
   case class GetKrwUsd(replyTo:ActorRef[Response]) extends Command
   case class GetPrices(stocks: Seq[Stock], replyTo: ActorRef[PricesResponse]) extends Command
+  case class GetPricesAndKrwUsd(stocks: Seq[Stock], replyTo: ActorRef[PricesAndKrwUsdResponse]) extends Command
 
   sealed trait Response
   case class PriceResponse(price:NowPrice) extends Response
   case class PricesResponse(prices: Map[Stock, Option[NowPrice]]) extends Response
   case class KrwUsdResponse(krwUsd: KrwUsd) extends Response
+  case class PricesAndKrwUsdResponse(prices: Map[Stock, Option[NowPrice]], krwUsd: KrwUsd) extends Response
   case object NotFoundStock extends Response
 
   def apply()(implicit collectorService: CollectorService
@@ -98,6 +100,14 @@ object NowPriceActor {
                 Behaviors.same
               case GetKrwUsd(replyTo) =>
                 replyTo ! KrwUsdResponse(krwUsd)
+                Behaviors.same
+
+              case GetPricesAndKrwUsd(stocks, replyTo) =>
+                replyTo ! PricesAndKrwUsdResponse(
+                  stocks.foldLeft(Map.empty[Stock, Option[NowPrice]])((res, stock) =>
+                    res + (stock -> koreaPrices.get(stock.code.toUpperCase)))
+                  , krwUsd
+                )
                 Behaviors.same
 
               case CollectTimer =>

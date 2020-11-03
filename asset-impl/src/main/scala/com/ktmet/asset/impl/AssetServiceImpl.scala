@@ -16,10 +16,12 @@ import akka.actor.typed.scaladsl.adapter._
 import com.ktmet.asset.impl.actor.{NowPriceActor, StockAutoCompleter}
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.serialization.{SerializationExtension, Serializers}
+import cats.{Functor, Id}
 import com.asset.collector.api.Country.Country
 import com.ktmet.asset.api.CashFlowHistory.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType
-import com.ktmet.asset.api.message.{AddingCashFlowHistory, AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, PortfolioCreatedMessage, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage}
+import com.ktmet.asset.api.message.PortfolioStatusMessage.StockStatus
+import com.ktmet.asset.api.message.{AddingCashFlowHistory, AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, PortfolioCreatedMessage, PortfolioStatusMessage, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage}
 import com.ktmet.asset.common.api.ClientException
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
@@ -308,7 +310,7 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
     }
   }
 
-  override def getPortfolioStatus(portfolioId: String): ServiceCall[NotUsed, Done] = authenticate { userId =>
+  override def getPortfolioStatus(portfolioId: String): ServiceCall[NotUsed, PortfolioStatusMessage] = authenticate { userId =>
     ServerServiceCall{ (_, _) =>
       def getPortfolio: Future[PortfolioState] =
         portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
@@ -328,13 +330,68 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
               }
             }
           }
+      def getStockStatus(price: BigDecimal, stockHolding: StockHolding): StockStatus =
+        Functor[Id].map( stockHolding.tradeHistories.foldLeft((BigDecimal(0), List.empty[TradeHistory])) {
+          case ((realizedProfitBalance, histories), history) =>
+            history match {
+              case h: BuyTradeHistory =>
+                (realizedProfitBalance
+                  , h.copy(profitRate = Some((price / h.price - 1).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100)
+                  , profitBalance = Some((price - h.price) * h.amount)):: histories)
+              case h: SellTradeHistory => (realizedProfitBalance + h.realizedProfitBalance, history :: histories)
+            }
+          }
+        ){ case (realizedBalance, histories) =>
+          StockStatus(stock = stockHolding.stock, amount = stockHolding.amount, avgPrice = stockHolding.avgPrice
+            , nowPrice = price, profitBalance = (price - stockHolding.avgPrice) * stockHolding.amount
+            , profitRate = (price / stockHolding.avgPrice - 1).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100
+            , realizedProfitBalance = realizedBalance, boughtBalance = stockHolding.avgPrice * stockHolding.amount
+            , evaluatedBalance = stockHolding.avgPrice * stockHolding.amount, tradeHistories = histories.reverse)
+        }
+
 
       for {
         portfolioState <- getPortfolio
         nowPrices <- getNowPrices(portfolioState)
-
+        stockStatus = portfolioState.getHoldingStocks.map.map{ case (stock, holding) =>
+                  stock -> getStockStatus(nowPrices.get(stock).get, holding)
+                }
+        cashStatus = portfolioState.getHoldingCashes.map
       } yield {
-        (ResponseHeader.Ok.withStatus(200), Done)
+        var (evaluatedTotalAsset, profitBalance, realizedProfitBalance, boughtBalance, totalAsset) = (BigDecimal(0), BigDecimal(0), BigDecimal(0), BigDecimal(0), BigDecimal(0))
+        stockStatus.map { case (stock, status) =>
+            evaluatedTotalAsset += status.evaluatedBalance
+            totalAsset += status.boughtBalance
+            profitBalance += status.profitBalance
+            realizedProfitBalance += status.realizedProfitBalance
+            boughtBalance += status.boughtBalance
+          }
+        cashStatus.map { case (cash, status) =>
+          evaluatedTotalAsset += status.balance
+          totalAsset += status.balance
+        }
+        val stockRatios = portfolioState.getStockRatio.foldLeft(Map.empty[Category, List[PortfolioStatusMessage.StockRatio]]){
+          case (result, (category, stockRatios)) =>
+            result + (category -> stockRatios.foldLeft(List.empty[PortfolioStatusMessage.StockRatio]){
+              (result, ratio) => PortfolioStatusMessage.StockRatio(ratio.stock, ratio.ratio
+                , ((stockStatus.get(ratio.stock).get.evaluatedBalance)/evaluatedTotalAsset).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100) :: result
+              })
+        }
+        val cashRatios = portfolioState.getCashRatio.foldLeft(Map.empty[Category, List[PortfolioStatusMessage.CashRatio]]){
+          case (result, (category, cashRatios)) =>
+            result + (category -> cashRatios.foldLeft(List.empty[PortfolioStatusMessage.CashRatio]){
+              (result, ratio) => PortfolioStatusMessage.CashRatio(ratio.country, ratio.ratio
+                , ((cashStatus.get(ratio.country).get.balance)/evaluatedTotalAsset).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100) :: result
+            })
+        }
+
+        (ResponseHeader.Ok.withStatus(200), PortfolioStatusMessage(evaluatedTotalAsset = evaluatedTotalAsset
+          , profitBalance = profitBalance
+          , profitRate = (evaluatedTotalAsset/totalAsset).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100
+          , realizedProfitBalance =  realizedProfitBalance
+          , boughtBalance = boughtBalance, assetCategory = portfolioState.assetCategory
+          , assetRatio = PortfolioStatusMessage.AssetRatio(stockRatios, cashRatios)
+          , cashStatus = cashStatus, stockStatus = stockStatus))
       }
     }
   }
