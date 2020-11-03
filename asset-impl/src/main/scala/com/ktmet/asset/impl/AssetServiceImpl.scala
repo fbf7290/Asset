@@ -319,6 +319,20 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
             case PortfolioEntity.PortfolioResponse(portfolioState) => portfolioState
             case m: ClientException => throw m
           }
+
+      def getNowPricesAndKrwUsd(portfolioState: PortfolioState): Future[(Map[Stock, BigDecimal], BigDecimal)] =
+        nowPriceActor.ask[NowPriceActor.PricesAndKrwUsdResponse](reply =>
+          NowPriceActor.GetPricesAndKrwUsd(portfolioState.getHoldingAssets._1.toSeq, reply))
+          .map{ case NowPriceActor.PricesAndKrwUsdResponse(prices, krwUsd) =>
+            (prices.map { case (stock, maybePrice) =>
+              maybePrice match {
+                case Some(nowPrice) => stock -> nowPrice.price
+                case None => stock -> portfolioState.getHoldingStock(stock).get.tradeHistories.headOption.fold(BigDecimal(0))(_.price)
+              }
+            }, krwUsd.rate)
+          }
+
+
       def getNowPrices(portfolioState: PortfolioState): Future[Map[Stock, BigDecimal]] =
         nowPriceActor.ask[NowPriceActor.PricesResponse](reply =>
           NowPriceActor.GetPrices(portfolioState.getHoldingAssets._1.toSeq, reply))
@@ -352,7 +366,7 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
 
       for {
         portfolioState <- getPortfolio
-        nowPrices <- getNowPrices(portfolioState)
+        (nowPrices, krwUsd) <- getNowPricesAndKrwUsd(portfolioState)
         stockStatus = portfolioState.getHoldingStocks.map.map{ case (stock, holding) =>
                   stock -> getStockStatus(nowPrices.get(stock).get, holding)
                 }
@@ -360,15 +374,23 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
       } yield {
         var (evaluatedTotalAsset, profitBalance, realizedProfitBalance, boughtBalance, totalAsset) = (BigDecimal(0), BigDecimal(0), BigDecimal(0), BigDecimal(0), BigDecimal(0))
         stockStatus.map { case (stock, status) =>
-            evaluatedTotalAsset += status.evaluatedBalance
-            totalAsset += status.boughtBalance
-            profitBalance += status.profitBalance
-            realizedProfitBalance += status.realizedProfitBalance
-            boughtBalance += status.boughtBalance
+            val krwUsdRatio = stock.country match {
+              case Country.USA => krwUsd
+              case Country.KOREA => BigDecimal(1)
+            }
+            evaluatedTotalAsset += status.evaluatedBalance * krwUsdRatio
+            totalAsset += status.boughtBalance * krwUsdRatio
+            profitBalance += status.profitBalance * krwUsdRatio
+            realizedProfitBalance += status.realizedProfitBalance * krwUsdRatio
+            boughtBalance += status.boughtBalance * krwUsdRatio
           }
         cashStatus.map { case (cash, status) =>
-          evaluatedTotalAsset += status.balance
-          totalAsset += status.balance
+          val krwUsdRatio = cash match {
+            case Country.USA => krwUsd
+            case Country.KOREA => BigDecimal(1)
+          }
+          evaluatedTotalAsset += status.balance * krwUsdRatio
+          totalAsset += status.balance * krwUsdRatio
         }
         val stockRatios = portfolioState.getStockRatio.foldLeft(Map.empty[Category, List[PortfolioStatusMessage.StockRatio]]){
           case (result, (category, stockRatios)) =>
@@ -385,7 +407,7 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
             })
         }
 
-        (ResponseHeader.Ok.withStatus(200), PortfolioStatusMessage(evaluatedTotalAsset = evaluatedTotalAsset
+        (ResponseHeader.Ok.withStatus(200), PortfolioStatusMessage( evaluatedTotalAsset
           , profitBalance = profitBalance
           , profitRate = (evaluatedTotalAsset/totalAsset).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100
           , realizedProfitBalance =  realizedProfitBalance
