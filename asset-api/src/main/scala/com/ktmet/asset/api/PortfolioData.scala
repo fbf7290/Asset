@@ -340,9 +340,9 @@ case class StockHoldingMap(map: Map[Stock, StockHolding]){
   def getAssets: Set[Stock] = map.keySet
   def getStock(stock: Stock): Option[StockHolding] = map.get(stock)
   def addHistory(history: TradeHistory): StockHoldingMap =
-    copy(map + (history.stock -> map.get(history.stock).get.addHistory(history).right.get))
+    copy(map + (history.stock -> map.get(history.stock).get.addHistory(history).fold(i=>i, i=>i)))
   def removeHistory(history: TradeHistory): StockHoldingMap =
-    copy(map + (history.stock -> map.get(history.stock).get.removeHistory(history).right.get))
+    copy(map + (history.stock -> map.get(history.stock).get.removeHistory(history).fold(i=>i, i=>i)))
   def addStockHolding(stockHolding: StockHolding): StockHoldingMap =
     copy(map + (stockHolding.stock -> stockHolding))
   def removeStockHolding(stock: Stock): StockHoldingMap =

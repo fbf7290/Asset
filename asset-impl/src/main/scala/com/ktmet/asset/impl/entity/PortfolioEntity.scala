@@ -34,6 +34,7 @@ object PortfolioEntity {
   case class UpdateTradeHistory(owner: UserId, historySet: HistorySet, replyTo: ActorRef[Response]) extends Command
   case class DeleteStock(owner: UserId, stock: Stock, category: Category, replyTo: ActorRef[Response]) extends Command
   case class UpdateStockCategory(owner: UserId, stock: Stock, lastCategory: Category, newCategory: Category, replyTo: ActorRef[Response]) extends Command
+  case class GetStock(stock:Stock, replyTo: ActorRef[Response]) extends Command
 
   sealed trait Response
   trait ExceptionResponse extends Response
@@ -50,6 +51,7 @@ object PortfolioEntity {
   case class CashFlowHistoryAddedResponse(cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class CashFlowHistoryDeletedResponse(cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class CashFlowHistoryUpdatedResponse(cashHolding: CashHolding, updateTimestamp: Long) extends Response
+  case class StockResponse(stockHolding: StockHolding) extends Response
 
   case object NoPortfolioException extends ClientException(404, "NoPortfolioException", "Portfolio does not exist") with Response
   case object AlreadyPortfolioException extends ClientException(404, "AlreadyPortfolioException", "Portfolio already exist") with Response
@@ -213,6 +215,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     case UpdateTradeHistory(owner, historySet, replyTo) => onUpdateTradeHistory(owner, historySet, replyTo)
     case DeleteStock(owner, stock, category, replyTo) => onDeleteStock(owner, stock, category, replyTo)
     case UpdateStockCategory(owner, stock, lastCategory, newCategory, replyTo) => onUpdateStockCategory(owner, stock, lastCategory, newCategory, replyTo)
+    case GetStock(stock, replyTo) => onGetStock(stock, replyTo)
   }
 
   private def onCreatePortfolio(portfolioId: PortfolioId, owner: UserId, name: String
@@ -398,6 +401,11 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
         case false => Effect.reply(replyTo)(NotFoundCategoryException)
       }
     }
+  private def onGetStock(stock: Stock, replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
+    funcWithState(replyTo)(state => state.getHoldingStock(stock) match {
+      case Some(stock) => Effect.reply(replyTo)(StockResponse(stock))
+      case None => Effect.reply(replyTo)(NotFoundStockException)
+    })
 
   def applyEvent(evt: Event): PortfolioEntity = evt match {
     case PortfolioCreated(portfolioId, owner, name, usaCashFlowHistory, koreaCashHistory, updateTimestamp) => onPortfolioCreated(portfolioId, owner, name, usaCashFlowHistory, koreaCashHistory, updateTimestamp)

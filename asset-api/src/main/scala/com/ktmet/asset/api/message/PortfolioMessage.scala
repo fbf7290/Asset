@@ -6,7 +6,7 @@ import com.ktmet.asset.api.CashFlowHistory.FlowType.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType.TradeType
 import com.ktmet.asset.api.message.AddingStockMessage.AddingTradeHistory
 import com.ktmet.asset.api.message.PortfolioStatusMessage.{AssetRatio, StockStatus}
-import com.ktmet.asset.api.{AssetCategory, CashFlowHistory, CashHolding, CashRatio, Category, StockHolding, StockRatio, TradeHistory}
+import com.ktmet.asset.api.{AssetCategory, CashFlowHistory, CashHolding, CashRatio, Category, GoalAssetRatio, Holdings, PortfolioId, PortfolioState, StockHolding, StockRatio, TradeHistory, UserId}
 import play.api.libs.json.{Format, JsResult, JsSuccess, JsValue, Json, Reads, Writes}
 
 case class TimestampMessage(updateTimestamp: Long)
@@ -254,3 +254,34 @@ object PortfolioStatusMessage {
 
   implicit val format:Format[PortfolioStatusMessage] = Json.format
 }
+
+
+case class PortfolioStockMessage(stock: Stock, amount: Int
+                                 , avgPrice: BigDecimal, realizedProfitBalance: BigDecimal
+                                 , tradeHistories: List[TradeHistory])
+object PortfolioStockMessage {
+  implicit val format:Format[PortfolioStockMessage] = Json.format
+
+  def apply(stockHolding: StockHolding): PortfolioStockMessage =
+    new PortfolioStockMessage(stock = stockHolding.stock
+      , amount = stockHolding.amount, avgPrice = stockHolding.avgPrice
+      , realizedProfitBalance = stockHolding.realizedProfitBalance
+      , tradeHistories = stockHolding.tradeHistories)
+}
+
+
+case class PortfolioMessage(portfolioId: String, name: String, updateTimestamp:Long, owner: String
+                            , goalAssetRatio: GoalAssetRatio, assetCategory: AssetCategory,  holdings: Holdings)
+object PortfolioMessage {
+  implicit val format:Format[PortfolioMessage] = Json.format
+
+  def apply(portfolioState: PortfolioState): PortfolioMessage =
+    new PortfolioMessage(portfolioId = portfolioState.portfolioId.value
+      , name = portfolioState.name
+      , updateTimestamp = portfolioState.updateTimestamp
+      , owner = portfolioState.owner.value
+      , goalAssetRatio = portfolioState.goalAssetRatio
+      , assetCategory = portfolioState.assetCategory
+      , holdings = portfolioState.holdings)
+}
+

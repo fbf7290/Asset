@@ -21,7 +21,7 @@ import com.asset.collector.api.Country.Country
 import com.ktmet.asset.api.CashFlowHistory.FlowType
 import com.ktmet.asset.api.TradeHistory.TradeType
 import com.ktmet.asset.api.message.PortfolioStatusMessage.StockStatus
-import com.ktmet.asset.api.message.{AddingCashFlowHistory, AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, PortfolioCreatedMessage, PortfolioStatusMessage, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage}
+import com.ktmet.asset.api.message.{AddingCashFlowHistory, AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, PortfolioCreatedMessage, PortfolioMessage, PortfolioStatusMessage, PortfolioStockMessage, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage}
 import com.ktmet.asset.common.api.ClientException
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
@@ -122,12 +122,12 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
     }
   }
 
-  override def getPortfolio(portfolioId: String): ServiceCall[NotUsed, PortfolioState] =  authenticate{ userId =>
+  override def getPortfolio(portfolioId: String): ServiceCall[NotUsed, PortfolioMessage] =  authenticate{ userId =>
     ServerServiceCall{ (_, _) =>
       portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply => PortfolioEntity.GetPortfolio(reply))
         .collect{
           case PortfolioEntity.PortfolioResponse(portfolioState) =>
-            (ResponseHeader.Ok.withStatus(200), portfolioState)
+            (ResponseHeader.Ok.withStatus(200), PortfolioMessage(portfolioState))
           case m: ClientException => throw m
         }
     }
@@ -345,9 +345,9 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
         ){ case (realizedBalance, histories) =>
           StockStatus(stock = stockHolding.stock, amount = stockHolding.amount, avgPrice = stockHolding.avgPrice
               , nowPrice = price
-              , profitBalance = if(stockHolding.avgPrice == 0) BigDecimal(0)
+              , profitBalance = if(stockHolding.avgPrice == 0 || stockHolding.amount == 0) BigDecimal(0)
                                   else (price - stockHolding.avgPrice) * stockHolding.amount
-              , profitRate = if(stockHolding.avgPrice == 0) BigDecimal(0)
+              , profitRate = if(stockHolding.avgPrice == 0 || stockHolding.amount == 0) BigDecimal(0)
                            else (price / stockHolding.avgPrice - 1).setScale(2, BigDecimal.RoundingMode.HALF_UP) * 100
               , realizedProfitBalance = realizedBalance, boughtBalance = stockHolding.avgPrice * stockHolding.amount
               , evaluatedBalance = price * stockHolding.amount, tradeHistories = histories.reverse)
@@ -412,6 +412,19 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
           , assetRatio = PortfolioStatusMessage.AssetRatio(stockRatios, cashRatios)
           , cashStatus = cashStatus, stockStatus = stockStatus))
       }
+    }
+  }
+
+  override def getPortfolioStock(portfolioId: String, stock: String): ServiceCall[NotUsed, PortfolioStockMessage] = authenticate { userId =>
+    ServerServiceCall{ (_, _) =>
+      val stockObj = Json.parse(URLDecoder.decode(stock, "UTF-8")).as[Stock]
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.GetStock(stockObj, reply))
+        .collect{
+          case PortfolioEntity.StockResponse(stockHolding) =>
+            (ResponseHeader.Ok.withStatus(200),  PortfolioStockMessage(stockHolding))
+          case m: ClientException => throw m
+        }
     }
   }
 

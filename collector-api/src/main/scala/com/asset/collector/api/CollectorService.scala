@@ -37,7 +37,7 @@ trait CollectorService extends Service{
 
         restCall(Method.GET, "/stock/korea/prices", getKoreaNowPrices),
         restCall(Method.GET, "/stock/usa/prices", getUsaNowPrices),
-        restCall(Method.GET, "/krwusd", getNowKrwUsd),
+        restCall(Method.GET, "/collect/krwusd", getNowKrwUsd),
 
         restCall(Method.POST, "/stock/korea/batch", requestBatchKoreaStock),
         restCall(Method.POST, "/stock/usa/batch", requestBatchUsaStock),

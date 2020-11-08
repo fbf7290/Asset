@@ -2,7 +2,7 @@ package com.ktmet.asset.api
 
 import akka.{Done, NotUsed}
 import com.asset.collector.api.{KrwUsd, NowPrice, Stock}
-import com.ktmet.asset.api.message.{AddingCashFlowHistory, AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, PortfolioCreatedMessage, PortfolioStatusMessage, RefreshingToken, SocialLoggingIn, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage, UserMessage}
+import com.ktmet.asset.api.message.{AddingCashFlowHistory, AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, PortfolioCreatedMessage, PortfolioMessage, PortfolioStatusMessage, PortfolioStockMessage, RefreshingToken, SocialLoggingIn, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage, UserMessage}
 import com.ktmet.asset.common.api.ClientExceptionSerializer
 import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Descriptor, Service, ServiceAcl, ServiceCall}
@@ -26,7 +26,7 @@ trait AssetService extends Service{
 
   def createPortfolio: ServiceCall[CreatingPortfolioMessage, PortfolioCreatedMessage]
   def deletePortfolio(portfolioId: String): ServiceCall[NotUsed, Done]
-  def getPortfolio(portfolioId: String): ServiceCall[NotUsed, PortfolioState]
+  def getPortfolio(portfolioId: String): ServiceCall[NotUsed, PortfolioMessage]
   def addCategory(portfolioId: String): ServiceCall[AddingCategoryMessage, TimestampMessage]
   def updateGoalAssetRatio(portfolioId: String): ServiceCall[UpdatingGoalAssetRatioMessage, TimestampMessage]
   def addStock(portfolioId: String): ServiceCall[AddingStockMessage, StockAddedMessage]
@@ -39,6 +39,7 @@ trait AssetService extends Service{
   def updateCashFlowHistory(portfolioId: String): ServiceCall[UpdatingCashFlowHistory, CashFlowHistoryUpdatedMessage]
   def updateStockCategory(portfolioId: String): ServiceCall[UpdatingStockCategory, StockCategoryUpdatedMessage]
   def getPortfolioStatus(portfolioId: String): ServiceCall[NotUsed, PortfolioStatusMessage]
+  def getPortfolioStock(portfolioId: String, stock: String): ServiceCall[NotUsed, PortfolioStockMessage]
 
 
 
@@ -76,6 +77,7 @@ trait AssetService extends Service{
         restCall(Method.POST, "/portfolio/:portfolioId/cash/history", updateCashFlowHistory _),
         restCall(Method.POST, "/portfolio/:portfolioId/stock/category", updateStockCategory _),
         restCall(Method.GET, "/portfolio/:portfolioId/status", getPortfolioStatus _),
+        restCall(Method.GET, "/portfolio/:portfolioId/stock/info/:stock", getPortfolioStock _),
 
         restCall(Method.GET, "/test", test)
 
