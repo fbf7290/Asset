@@ -110,7 +110,13 @@ case class AssetCategory(stockCategory: Map[Category, List[Stock]]
   def contain(category: Category, stock: Stock): Boolean =
     stockCategory.find{ case (c, l) => c == category && l.contains(stock)}.fold(false)(_=>true)
   def removeStock(category: Category, stock: Stock): AssetCategory =
-    copy(stockCategory = stockCategory + (category -> stockCategory.getOrElse(category, List.empty[Stock]).filterNot(_ == stock)))
+    Functor[Id].map(stockCategory.get(category) match {
+      case Some(stocks) => stocks.filterNot(_ == stock)
+      case None => List.empty
+    }){ stocks =>
+      if(stocks.isEmpty) copy(stockCategory = stockCategory - category)
+      else copy(stockCategory = stockCategory + (category -> stocks))
+    }
 }
 object AssetCategory {
   implicit val stockCategoryReads: Reads[Map[Category, List[Stock]]] =

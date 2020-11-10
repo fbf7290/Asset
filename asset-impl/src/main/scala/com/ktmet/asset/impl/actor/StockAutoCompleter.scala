@@ -23,7 +23,6 @@ object StockAutoCompleter {
   def apply()(implicit collectorService: CollectorService):Behavior[Command] =
     Behaviors.setup[Command]{ context =>
       Behaviors.supervise[Command]{
-
         def init:Behavior[Command] = {
           context.pipeToSelf{
             collectorService.getKoreaStockList.invoke(NotUsed) zip
@@ -53,7 +52,7 @@ object StockAutoCompleter {
 
         def ing(koreaStocks: RadixTree[String, Stock], usaStocks:RadixTree[String, Stock]):Behavior[Command] = Behaviors.receiveMessage{
           case Search(prefix, replyTo) =>
-            replyTo ! SearchResponse(koreaStocks.filterPrefix(prefix).values, usaStocks.filterPrefix(prefix).values)
+            replyTo ! SearchResponse(koreaStocks.filterPrefix(prefix.toUpperCase).values, usaStocks.filterPrefix(prefix.toUpperCase).values)
             Behaviors.same
           case _ => Behaviors.same
         }
