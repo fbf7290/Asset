@@ -14,16 +14,12 @@ object TimestampMessage {
   implicit val format:Format[TimestampMessage] = Json.format
 }
 
-case class CreatingPortfolioMessage(name: String
-                                    , usaCash: BigDecimal
-                                    , koreaCash: BigDecimal)
+case class CreatingPortfolioMessage(name: String)
 object CreatingPortfolioMessage {
   implicit val format:Format[CreatingPortfolioMessage] = Json.format
 }
 
 case class PortfolioCreatedMessage(portfolioId: String
-                                   , usaCashHistory: CashFlowHistory
-                                   , koreaCashHistory: CashFlowHistory
                                    , updateTimestamp: Long)
 object PortfolioCreatedMessage {
   implicit val format:Format[PortfolioCreatedMessage] = Json.format

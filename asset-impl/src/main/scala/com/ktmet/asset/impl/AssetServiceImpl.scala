@@ -31,12 +31,6 @@ import io.jvm.uuid._
 import play.api.libs.json.Json
 
 
-
-
-
-
-
-
 class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
                        protected val system: ActorSystem,
                        protected val wsClient: WSClient)
@@ -90,11 +84,10 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
               case UserEntity.TooManyPortfolioException => throw UserEntity.TooManyPortfolioException
             }
         r <- portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
-                PortfolioEntity.CreatePortfolio(portfolioId, userId, createPortfolioMessage.name
-                  , createPortfolioMessage.usaCash, createPortfolioMessage.koreaCash, reply))
+                PortfolioEntity.CreatePortfolio(portfolioId, userId, createPortfolioMessage.name, reply))
             .collect{
-              case PortfolioEntity.CreatedResponse(portfolioId, name, usaCashFlowHistory, koreaCashFlowHistory, updateTimestamp) =>
-                PortfolioCreatedMessage(portfolioId.value, usaCashFlowHistory, koreaCashFlowHistory, updateTimestamp)
+              case PortfolioEntity.CreatedResponse(portfolioId, name, updateTimestamp) =>
+                PortfolioCreatedMessage(portfolioId.value, updateTimestamp)
               case m: ClientException =>
                 userEntityRef(userId).ask[UserEntity.Response](reply => UserEntity.DeletePortfolio(portfolioId, reply))
                 throw m
