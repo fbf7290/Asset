@@ -35,6 +35,7 @@ object PortfolioEntity {
   case class DeleteStock(owner: UserId, stock: Stock, category: Category, replyTo: ActorRef[Response]) extends Command
   case class UpdateStockCategory(owner: UserId, stock: Stock, lastCategory: Category, newCategory: Category, replyTo: ActorRef[Response]) extends Command
   case class GetStock(stock:Stock, replyTo: ActorRef[Response]) extends Command
+  case class GetTimestamp(replyTo: ActorRef[Response]) extends Command
 
   sealed trait Response
   trait ExceptionResponse extends Response
@@ -216,6 +217,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     case DeleteStock(owner, stock, category, replyTo) => onDeleteStock(owner, stock, category, replyTo)
     case UpdateStockCategory(owner, stock, lastCategory, newCategory, replyTo) => onUpdateStockCategory(owner, stock, lastCategory, newCategory, replyTo)
     case GetStock(stock, replyTo) => onGetStock(stock, replyTo)
+    case GetTimestamp(replyTo) => onGetTimestamp(replyTo)
   }
 
   private def onCreatePortfolio(portfolioId: PortfolioId, owner: UserId, name: String
@@ -403,6 +405,9 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
       case Some(stock) => Effect.reply(replyTo)(StockResponse(stock))
       case None => Effect.reply(replyTo)(NotFoundStockException)
     })
+  private def onGetTimestamp(replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
+    funcWithState(replyTo)(state => Effect.reply(replyTo)(TimestampResponse(state.updateTimestamp)))
+
 
   def applyEvent(evt: Event): PortfolioEntity = evt match {
     case PortfolioCreated(portfolioId, owner, name, updateTimestamp) => onPortfolioCreated(portfolioId, owner, name, updateTimestamp)
