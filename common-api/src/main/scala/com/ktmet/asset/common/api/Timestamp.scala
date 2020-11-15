@@ -14,5 +14,10 @@ object Timestamp {
   def nowHour = ZonedDateTime.now(Timestamp.zoneId).getHour
   def nowMinute = ZonedDateTime.now(Timestamp.zoneId).getMinute
 
+  def tomorrow(timestamp: Long) = {
+    val base = ZonedDateTime.ofInstant(Instant.ofEpochMilli(timestamp), Timestamp.zoneId)
+    base.withDayOfMonth(base.getDayOfMonth+1).withHour(0).withMinute(0).withSecond(0).toEpochSecond
+  }
+
   def afterDuration(duration: Duration) = Instant.now().plusSeconds(duration.toSeconds).getEpochSecond
 }
