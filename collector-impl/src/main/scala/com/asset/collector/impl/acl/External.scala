@@ -117,7 +117,7 @@ object External {
         val prices = YahooFinance.get(stocks.map(stock =>
           if(stock.market == Market.KOSPI || stock.market == Market.ETF) stock.code+".KS"
           else stock.code+".KQ").toArray)
-        prices.asScala.values.map{stock =>
+        prices.asScala.values.withFilter(_.getQuote.getPrice != null).map{stock =>
       NowPrice(stock.getSymbol.split("\\.")(0), stock.getQuote.getPrice, stock.getQuote.getChangeInPercent)}.toSeq
     }
 
