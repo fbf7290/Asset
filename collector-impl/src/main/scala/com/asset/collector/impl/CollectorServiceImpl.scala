@@ -9,7 +9,7 @@ import akka.actor.ActorSystem
 import akka.actor.typed.SupervisorStrategy
 import akka.{Done, NotUsed}
 import akka.util.{ByteString, Timeout}
-import com.asset.collector.api.{CollectorService, CollectorSettings, Country, FinnHubStock, KrwUsd, Market, NaverEtfListResponse, NowPrice, Price, Stock, Test}
+import com.asset.collector.api.{ClosePrice, CollectorService, CollectorSettings, Country, FinnHubStock, KrwUsd, Market, NaverEtfListResponse, NowPrice, Price, Stock, Test}
 import com.asset.collector.impl.repo.stock.{StockRepo, StockRepoAccessor}
 import com.lightbend.lagom.scaladsl.api.ServiceCall
 import com.lightbend.lagom.scaladsl.api.transport.ResponseHeader
@@ -37,6 +37,7 @@ import akka.cluster.typed.{ClusterSingleton, SingletonActor}
 import akka.stream.Materializer
 import akka.stream.scaladsl.{FileIO, Sink, Source}
 import cats.data.OptionT
+import com.asset.collector.api.message.GettingClosePricesAfterDate
 import com.asset.collector.impl.Fcm.FcmMessage
 
 import scala.collection.mutable
@@ -131,4 +132,17 @@ class CollectorServiceImpl(val system: ActorSystem
     batchActor.ask[BatchActor.Reply.type](reply => BatchActor.CollectKrwUsd(Some(reply)))
       .map(_ => (ResponseHeader.Ok.withStatus(200), Done))
   }
+
+  override def getClosePricesAfterDate: ServiceCall[GettingClosePricesAfterDate, Seq[ClosePrice]] =
+    ServerServiceCall { (_, gettingClosePricesAfterDate) =>
+      StockRepoAccessor.selectClosePricesAfterDate(gettingClosePricesAfterDate.stock
+        , gettingClosePricesAfterDate.date).run(stockDb)
+        .map(prices => (ResponseHeader.Ok.withStatus(200), prices))
+    }
+
+  override def getKrwUsdsAfterDate(date: String): ServiceCall[NotUsed, Seq[KrwUsd]] =
+    ServerServiceCall { (_, _) =>
+      StockRepoAccessor.selectKrwUsdsAfterDate(date).run(stockDb)
+        .map(krwUsds => (ResponseHeader.Ok.withStatus(200), krwUsds))
+    }
 }

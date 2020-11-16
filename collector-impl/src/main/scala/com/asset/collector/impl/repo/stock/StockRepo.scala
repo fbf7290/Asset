@@ -4,7 +4,7 @@ import akka.Done
 import cats.data.OptionT
 import cats.instances.future._
 import com.asset.collector.api.Country.Country
-import com.asset.collector.api.{KrwUsd, Market, NowPrice, Price, Stock}
+import com.asset.collector.api.{ClosePrice, KrwUsd, Market, NowPrice, Price, Stock}
 import com.lightbend.lagom.scaladsl.persistence.cassandra.CassandraSession
 import com.datastax.driver.core.BatchStatement
 
@@ -72,6 +72,12 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
     }
   }
 
+  override def selectClosePricesAfterDate(stock: Stock, date: String): Future[Seq[ClosePrice]] =
+    session.selectAll(s"SELECT date, close FROM ${stock.country}_price " +
+      s"where code='${stock.code}' and date>'${date}'").map{ rows =>
+      rows.map{ row => ClosePrice(stock.code, row.getString("date")
+        , BigDecimal(row.getDecimal("close")))}}
+
   override def createNowPriceTable(country: Country): Future[Done] =
     session.executeCreateTable(s"create table if not exists ${country}_now_price (ignored TEXT, code TEXT, price DECIMAL, change_percent DECIMAL, PRIMARY KEY(ignored, code))")
 
@@ -113,5 +119,10 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
     } yield {
       r
     }
+  }
+
+  override def selectKrwUsdsAfterDate(date: String): Future[Seq[KrwUsd]] = {
+    session.selectAll(s"SELECT date, rate FROM krw_usd where ignored='1' and date>'${date}'")
+      .map{ rows => rows.map{row => KrwUsd(row.getString("date"), row.getDecimal("rate"))}}
   }
 }

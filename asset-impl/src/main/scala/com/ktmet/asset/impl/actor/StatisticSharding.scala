@@ -11,11 +11,13 @@ import com.ktmet.asset.impl.entity.PortfolioEntity
 import com.ktmet.asset.impl.repo.statistic.{StatisticRepoAccessor, StatisticRepoTrait}
 import cats.instances.future._
 import com.asset.collector.api.Country.Country
-import com.asset.collector.api.Stock
+import com.asset.collector.api.message.GettingClosePricesAfterDate
+import com.asset.collector.api.{CollectorService, KrwUsd, Stock}
 import com.ktmet.asset.api.CashFlowHistory.FlowType
 import com.ktmet.asset.api.PortfolioStatistic.StatisticType
 import com.ktmet.asset.api.TradeHistory.TradeType
 import com.ktmet.asset.common.api.{ClientException, Timestamp}
+import cats.data.NonEmptyList
 
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.{ExecutionContext, Future}
@@ -35,17 +37,27 @@ object StatisticSharding {
   sealed trait Response
   case object NotFoundPortfolio extends ClientException(404, "NotFoundPortfolio", "NotFoundPortfolio") with Response
 
-  case class StockStatus(timestamp: Long, avgPrice: BigDecimal, amount: Int)
-  case class StockStatusOverTime(stock: Stock, statusOverTime: Seq[StockStatus])
-  case class CashStatus(timestamp: Long, balance: BigDecimal)
-  case class CashStatusOverTime(country: Country, statusOverTime: Seq[CashStatus])
+  case class StockStatus(date: String, avgPrice: BigDecimal, amount: Int)
+  object StockStatus{
+    def empty: StockStatus = StockStatus("00000000", 0, 0)
+  }
+  case class StockStatusOverTime(stock: Stock, statusOverTime: NonEmptyList[StockStatus])
+  case class CashStatus(date: String, balance: BigDecimal)
+  object CashStatus{
+    def empty: CashStatus = CashStatus("00000000", 0)
+  }
+  case class CashStatusOverTime(country: Country, statusOverTime: NonEmptyList[CashStatus])
+  case class MarketValue(date: String, value: BigDecimal)
+  case class StockMarketValueOverTime(stock: Stock, marketValue: MarketValue)
+  case class CashMarketValueOverTime(country: Country, marketValue: MarketValue)
 }
 
 case class StatisticSharding(portfolioId: PortfolioId, statisticDb: StatisticRepoTrait[Future]
                             , clusterSharding: ClusterSharding
                              , context: ActorContext[Command]
                              , buffer: StashBuffer[Command])
-                            (implicit ec: ExecutionContext, askTimeout: Timeout){
+                            (implicit collectorService: CollectorService
+                             , ec: ExecutionContext, askTimeout: Timeout){
   import StatisticSharding._
 
   private def portfolioEntityRef: EntityRef[PortfolioEntity.Command] =
@@ -53,36 +65,49 @@ case class StatisticSharding(portfolioId: PortfolioId, statisticDb: StatisticRep
 
   private def calTotalAssetStatistic(portfolioState: PortfolioState): TimeSeriesStatistic = {
 
-    def getStockStatusOverTime(stockHolding: StockHolding): StockStatusOverTime =
-      StockStatusOverTime(stockHolding.stock, stockHolding.tradeHistories.reverse.scanLeft(StockStatus(0, 0, 0)){
+    def getKrwUsds(date: String): Future[Seq[KrwUsd]] = collectorService.getKrwUsdsAfterDate(date).invoke()
+
+    def getStockStatusOverTime(stockHolding: StockHolding): Option[StockStatusOverTime] = {
+      val statusOverTime = stockHolding.tradeHistories.reverse.scanLeft(StockStatus.empty){
         (stockStatus, history) =>
           history.tradeType match {
             case TradeType.BUY =>
-              StockStatus(Timestamp.tomorrow(history.timestamp)
+              StockStatus(Timestamp.tomorrowDate(history.timestamp)
                 , (stockStatus.avgPrice * stockStatus.amount + history.price * history.amount)
                   .setScale(4, BigDecimal.RoundingMode.HALF_UP)
                 , stockStatus.amount + history.amount)
             case TradeType.SELL =>
               (stockStatus.amount - history.amount) <= 0 match {
-                case true => StockStatus(Timestamp.tomorrow(history.timestamp), 0, 0)
-                case false => StockStatus(Timestamp.tomorrow(history.timestamp)
+                case true => StockStatus(Timestamp.tomorrowDate(history.timestamp), 0, 0)
+                case false => StockStatus(Timestamp.tomorrowDate(history.timestamp)
                   , (stockStatus.avgPrice * stockStatus.amount - history.price * history.amount)
                     .setScale(4, BigDecimal.RoundingMode.HALF_UP)
                   , stockStatus.amount - history.amount)
               }
           }
-      }.drop(1))
+        }.drop(1)
+      NonEmptyList.fromList(statusOverTime).map(StockStatusOverTime(stockHolding.stock, _))
+    }
 
-    def getCashStatusOverTime(cashHolding: CashHolding): CashStatusOverTime =
-      CashStatusOverTime(cashHolding.country, cashHolding.cashFlowHistories.reverse.scanLeft(CashStatus(0, 0)){
+    def getCashStatusOverTime(cashHolding: CashHolding): Option[CashStatusOverTime] = {
+      val statusOverTime = cashHolding.cashFlowHistories.reverse.scanLeft(CashStatus.empty){
         (cashStatus, history) =>
           history.flowType match {
             case FlowType.DEPOSIT | FlowType.SOLDAMOUNT =>
-              CashStatus(Timestamp.tomorrow(history.timestamp), cashStatus.balance + history.balance)
+              CashStatus(Timestamp.tomorrowDate(history.timestamp), cashStatus.balance + history.balance)
             case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT =>
-              CashStatus(Timestamp.tomorrow(history.timestamp), cashStatus.balance - history.balance)
+              CashStatus(Timestamp.tomorrowDate(history.timestamp), cashStatus.balance - history.balance)
           }
-      }.drop(1))
+      }.drop(1)
+      NonEmptyList.fromList(statusOverTime).map(CashStatusOverTime(cashHolding.country, _))
+    }
+
+    def calculateStockMarketValue(stockStatusOverTime: StockStatusOverTime): Option[StockMarketValueOverTime] = {
+      collectorService.getClosePricesAfterDate.invoke(GettingClosePricesAfterDate(stockStatusOverTime.stock
+        , stockStatusOverTime.statusOverTime.head.date))
+
+      ???
+    }
 
     ???
   }
@@ -150,3 +175,5 @@ case class StatisticSharding(portfolioId: PortfolioId, statisticDb: StatisticRep
 
   }
 }
+
+// TODO 상장일 체크, 실제 주식이 있는 지 체크

@@ -5,7 +5,7 @@ import cats.Monad
 import cats.data.ReaderT
 import com.asset.collector.api.Country.Country
 import com.asset.collector.api.Market.Market
-import com.asset.collector.api.{KrwUsd, NowPrice, Price, Stock}
+import com.asset.collector.api.{ClosePrice, KrwUsd, NowPrice, Price, Stock}
 
 object StockRepoAccessor {
 
@@ -55,6 +55,12 @@ object StockRepoAccessor {
       db => db.insertBatchPrice(country, prices)
     }
 
+  def selectClosePricesAfterDate[F[_]:Monad](stock: Stock, date: String):ReaderT[F, StockRepoTrait[F], Seq[ClosePrice]] =
+    ReaderT[F, StockRepoTrait[F], Seq[ClosePrice]] {
+      db => db.selectClosePricesAfterDate(stock, date)
+    }
+
+
   def createNowPriceTable[F[_]:Monad](country:Country):ReaderT[F, StockRepoTrait[F], Done] =
     ReaderT[F, StockRepoTrait[F], Done] {
       db => db.createNowPriceTable(country)
@@ -81,4 +87,8 @@ object StockRepoAccessor {
       db => db.insertBatchKrwUsd(krwUsds)
     }
 
+  def selectKrwUsdsAfterDate[F[_]:Monad](date:String):ReaderT[F, StockRepoTrait[F], Seq[KrwUsd]] =
+    ReaderT[F, StockRepoTrait[F], Seq[KrwUsd]] {
+      db => db.selectKrwUsdsAfterDate(date)
+    }
 }

@@ -3,7 +3,7 @@ package com.asset.collector.impl.repo.stock
 import akka.Done
 import com.asset.collector.api.Country.Country
 import com.asset.collector.api.Market.Market
-import com.asset.collector.api.{KrwUsd, NowPrice, Price, Stock}
+import com.asset.collector.api.{ClosePrice, KrwUsd, NowPrice, Price, Stock}
 
 
 trait StockRepoTrait[F[_]] {
@@ -17,6 +17,7 @@ trait StockRepoTrait[F[_]] {
   def selectLatestTimestamp(country: Country, code: String):F[Option[String]]
   def insertPrice(country:Country, price:Price):F[Done]
   def insertBatchPrice(country: Country, prices:Seq[Price]):F[Done]
+  def selectClosePricesAfterDate(stock: Stock, date:String):F[Seq[ClosePrice]]
 
   def createNowPriceTable(country: Country):F[Done]
   def selectNowPrices(country: Country):F[Seq[NowPrice]]
@@ -24,4 +25,5 @@ trait StockRepoTrait[F[_]] {
 
   def createKrwUsdTable:F[Done]
   def insertBatchKrwUsd(krwUsds:Seq[KrwUsd]):F[Done]
+  def selectKrwUsdsAfterDate(date: String): F[Seq[KrwUsd]]
 }

@@ -125,3 +125,8 @@ object KrwUsd{
   def empty = KrwUsd("", BigDecimal(1150))
   implicit val format :Format[KrwUsd]= Json.format
 }
+
+case class ClosePrice(code: String, date: String, price: BigDecimal)
+object ClosePrice{
+  implicit val format :Format[ClosePrice]= Json.format
+}
