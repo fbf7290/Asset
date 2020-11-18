@@ -5,7 +5,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, EntityRef, EntityTypeKey}
 import akka.util.Timeout
 import cats.{Functor, Id}
-import com.ktmet.asset.api.{BuyTradeHistory, CashHolding, PortfolioId, PortfolioState, StatisticVersion, StockHolding, TimeSeriesStatistic, TradeHistory}
+import com.ktmet.asset.api.{BuyTradeHistory, CashFlowHistory, CashHolding, PortfolioId, PortfolioState, StatisticVersion, StockHolding, TimeSeriesStatistic, TradeHistory}
 import com.ktmet.asset.impl.actor.StatisticSharding.Command
 import com.ktmet.asset.impl.entity.PortfolioEntity
 import com.ktmet.asset.impl.repo.statistic.{StatisticRepoAccessor, StatisticRepoTrait}
@@ -38,12 +38,13 @@ object StatisticSharding {
   sealed trait Response
   case object NotFoundPortfolio extends ClientException(404, "NotFoundPortfolio", "NotFoundPortfolio") with Response
 
-  case class TradeSummary(date: String, tradeType: TradeType, amount: Int, avgPrice:BigDecimal)
+  case class StockTradeSummary(date: String, tradeType: TradeType, amount: Int, avgPrice:BigDecimal)
   case class StockStatus(date: String, avgPrice: BigDecimal, amount: Int)
   object StockStatus{
     def empty: StockStatus = StockStatus("00000000", 0, 0)
   }
   case class StockStatusOverTime(stock: Stock, statusOverTime: NonEmptyList[StockStatus])
+
   case class CashStatus(date: String, balance: BigDecimal)
   object CashStatus{
     def empty: CashStatus = CashStatus("00000000", 0)
@@ -79,9 +80,9 @@ case class StatisticSharding(portfolioId: PortfolioId, statisticDb: StatisticRep
                 case TradeType.SELL => (buyAmount, sellAmount + history.amount, buyBalance)
               }
             }
-          if(buyAmount > sellAmount) TradeSummary(date, TradeType.BUY
+          if(buyAmount > sellAmount) StockTradeSummary(date, TradeType.BUY
             , buyAmount - sellAmount, (buyBalance/buyAmount).setScale(4, BigDecimal.RoundingMode.HALF_UP))
-          else TradeSummary(date, TradeType.SELL, sellAmount - buyAmount, 0)
+          else StockTradeSummary(date, TradeType.SELL, sellAmount - buyAmount, 0)
       }.toList.sortBy(_.date).scanLeft(StockStatus.empty){
         (stockStatus, summary) =>
           summary.tradeType match {
@@ -101,14 +102,17 @@ case class StatisticSharding(portfolioId: PortfolioId, statisticDb: StatisticRep
     }
 
     def getCashStatusOverTime(cashHolding: CashHolding): Option[CashStatusOverTime] = {
-      val statusOverTime = cashHolding.cashFlowHistories.reverse.scanLeft(CashStatus.empty){
-        (cashStatus, history) =>
-          history.flowType match {
-            case FlowType.DEPOSIT | FlowType.SOLDAMOUNT =>
-              CashStatus(Timestamp.tomorrowDate(history.timestamp), cashStatus.balance + history.balance)
-            case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT =>
-              CashStatus(Timestamp.tomorrowDate(history.timestamp), cashStatus.balance - history.balance)
-          }
+      val statusOverTime = cashHolding.cashFlowHistories.groupBy(history => Timestamp.tomorrowDate(history.timestamp)).map{
+        case (date, histories) =>
+          CashStatus(date, histories.foldLeft(BigDecimal(0)){ (balance, history) =>
+            history.flowType match {
+              case FlowType.DEPOSIT | FlowType.SOLDAMOUNT => balance + history.balance
+              case FlowType.WITHDRAW | FlowType.BOUGHTAMOUNT => balance - history.balance
+            }
+          })
+      }.toList.sortBy(_.date).scanLeft(CashStatus.empty){
+        (cashStatusOverTime, cashStatus) =>
+          CashStatus(cashStatus.date, cashStatusOverTime.balance + cashStatus.balance)
       }.drop(1)
       NonEmptyList.fromList(statusOverTime).map(CashStatusOverTime(cashHolding.country, _))
     }
