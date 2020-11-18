@@ -5,7 +5,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, EntityRef, EntityTypeKey}
 import akka.util.Timeout
 import cats.{Functor, Id}
-import com.ktmet.asset.api.{CashHolding, PortfolioId, PortfolioState, StatisticVersion, StockHolding, TimeSeriesStatistic}
+import com.ktmet.asset.api.{BuyTradeHistory, CashHolding, PortfolioId, PortfolioState, StatisticVersion, StockHolding, TimeSeriesStatistic, TradeHistory}
 import com.ktmet.asset.impl.actor.StatisticSharding.Command
 import com.ktmet.asset.impl.entity.PortfolioEntity
 import com.ktmet.asset.impl.repo.statistic.{StatisticRepoAccessor, StatisticRepoTrait}
@@ -18,6 +18,7 @@ import com.ktmet.asset.api.PortfolioStatistic.StatisticType
 import com.ktmet.asset.api.TradeHistory.TradeType
 import com.ktmet.asset.common.api.{ClientException, Timestamp}
 import cats.data.NonEmptyList
+import com.ktmet.asset.api.TradeHistory.TradeType.TradeType
 
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.{ExecutionContext, Future}
@@ -37,6 +38,7 @@ object StatisticSharding {
   sealed trait Response
   case object NotFoundPortfolio extends ClientException(404, "NotFoundPortfolio", "NotFoundPortfolio") with Response
 
+  case class TradeSummary(date: String, tradeType: TradeType, amount: Int, avgPrice:BigDecimal)
   case class StockStatus(date: String, avgPrice: BigDecimal, amount: Int)
   object StockStatus{
     def empty: StockStatus = StockStatus("00000000", 0, 0)
@@ -68,24 +70,33 @@ case class StatisticSharding(portfolioId: PortfolioId, statisticDb: StatisticRep
     def getKrwUsds(date: String): Future[Seq[KrwUsd]] = collectorService.getKrwUsdsAfterDate(date).invoke()
 
     def getStockStatusOverTime(stockHolding: StockHolding): Option[StockStatusOverTime] = {
-      val statusOverTime = stockHolding.tradeHistories.reverse.scanLeft(StockStatus.empty){
-        (stockStatus, history) =>
-          history.tradeType match {
+      val statusOverTime = stockHolding.tradeHistories.groupBy(history => Timestamp.tomorrowDate(history.timestamp)).map{
+        case (date, histories) =>
+          val (buyAmount, sellAmount, buyBalance) = histories.foldLeft((0, 0, BigDecimal(0))){
+            case ((buyAmount, sellAmount, buyBalance), history) =>
+              history.tradeType match {
+                case TradeType.BUY => (buyAmount + history.amount, sellAmount, buyBalance + history.price * history.amount)
+                case TradeType.SELL => (buyAmount, sellAmount + history.amount, buyBalance)
+              }
+            }
+          if(buyAmount > sellAmount) TradeSummary(date, TradeType.BUY
+            , buyAmount - sellAmount, (buyBalance/buyAmount).setScale(4, BigDecimal.RoundingMode.HALF_UP))
+          else TradeSummary(date, TradeType.SELL, sellAmount - buyAmount, 0)
+      }.toList.sortBy(_.date).scanLeft(StockStatus.empty){
+        (stockStatus, summary) =>
+          summary.tradeType match {
             case TradeType.BUY =>
-              StockStatus(Timestamp.tomorrowDate(history.timestamp)
-                , (stockStatus.avgPrice * stockStatus.amount + history.price * history.amount)
-                  .setScale(4, BigDecimal.RoundingMode.HALF_UP)
-                , stockStatus.amount + history.amount)
+              StockStatus(summary.date, (stockStatus.avgPrice * stockStatus.amount + summary.avgPrice * summary.amount)
+                .setScale(4, BigDecimal.RoundingMode.HALF_UP)
+              , stockStatus.amount + summary.amount)
             case TradeType.SELL =>
-              (stockStatus.amount - history.amount) <= 0 match {
-                case true => StockStatus(Timestamp.tomorrowDate(history.timestamp), 0, 0)
-                case false => StockStatus(Timestamp.tomorrowDate(history.timestamp)
-                  , (stockStatus.avgPrice * stockStatus.amount - history.price * history.amount)
-                    .setScale(4, BigDecimal.RoundingMode.HALF_UP)
-                  , stockStatus.amount - history.amount)
+              ((stockStatus.amount - summary.amount) <= 0) match {
+                case true => StockStatus(summary.date, 0, 0)
+                case false => StockStatus(summary.date, stockStatus.avgPrice, stockStatus.amount - summary.amount)
               }
           }
-        }.drop(1)
+      }.drop(1)
+
       NonEmptyList.fromList(statusOverTime).map(StockStatusOverTime(stockHolding.stock, _))
     }
 
@@ -105,7 +116,7 @@ case class StatisticSharding(portfolioId: PortfolioId, statisticDb: StatisticRep
     def calculateStockMarketValue(stockStatusOverTime: StockStatusOverTime): Option[StockMarketValueOverTime] = {
       collectorService.getClosePricesAfterDate.invoke(GettingClosePricesAfterDate(stockStatusOverTime.stock
         , stockStatusOverTime.statusOverTime.head.date))
-
+      //
       ???
     }
 
