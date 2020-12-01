@@ -120,7 +120,7 @@ case class StatisticSharding(portfolioId: PortfolioId, statisticDb: StatisticRep
     def calculateStockMarketValue(stockStatusOverTime: StockStatusOverTime): Option[StockMarketValueOverTime] = {
       collectorService.getClosePricesAfterDate.invoke(GettingClosePricesAfterDate(stockStatusOverTime.stock
         , stockStatusOverTime.statusOverTime.head.date))
-      //
+      // 매수 평균가
       ???
     }
 
@@ -130,7 +130,7 @@ case class StatisticSharding(portfolioId: PortfolioId, statisticDb: StatisticRep
   // 1. 각 종목, 현금 별 시간별 보유량과 매수가
   // 2. 보유량과 매수가에 따른 자산별 시장 가치 계산
   // 3. 모든 자산 시장 가치 계산
-
+  // TODO 매수 평균가가 필요없나?
 
 
 

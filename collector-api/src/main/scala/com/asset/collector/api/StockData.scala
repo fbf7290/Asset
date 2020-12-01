@@ -54,6 +54,11 @@ object Country extends Enumeration {
   implicit val format1: Format[Country] = Json.formatEnum(Country)
 
   def toCountry(value:String):Option[Country] = if(value=="korea") Some(KOREA) else if(value=="usa") Some(USA) else None
+
+  def setScale(bigDecimal: BigDecimal)(country: Country): BigDecimal = country match {
+    case KOREA => bigDecimal.setScale(2, BigDecimal.RoundingMode.HALF_UP)
+    case USA => bigDecimal.setScale(4, BigDecimal.RoundingMode.HALF_UP)
+  }
 }
 
 
