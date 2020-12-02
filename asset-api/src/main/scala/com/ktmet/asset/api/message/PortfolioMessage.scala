@@ -2,12 +2,9 @@ package com.ktmet.asset.api.message
 
 import com.asset.collector.api.Country.Country
 import com.asset.collector.api.{Country, Stock}
-import com.ktmet.asset.api.CashFlowHistory.FlowType.FlowType
-import com.ktmet.asset.api.TradeHistory.TradeType.TradeType
-import com.ktmet.asset.api.message.AddingStockMessage.AddingTradeHistory
 import com.ktmet.asset.api.message.PortfolioStatusMessage.{AssetRatio, StockStatus}
 import com.ktmet.asset.api.{AssetCategory, CashFlowHistory, CashHolding, CashRatio, Category, GoalAssetRatio, Holdings, PortfolioId, PortfolioState, StockHolding, StockRatio, TradeHistory, UserId}
-import play.api.libs.json.{Format, JsResult, JsSuccess, JsValue, Json, Reads, Writes}
+import play.api.libs.json.{Format, JsError, JsObject, JsPath, JsResult, JsString, JsSuccess, JsValue, Json, Reads, Writes}
 
 case class TimestampMessage(updateTimestamp: Long)
 object TimestampMessage {
@@ -30,26 +27,70 @@ object AddingCategoryMessage {
   implicit val format:Format[AddingCategoryMessage] = Json.format
 }
 
-case class UpdatingGoalAssetRatioMessage(stockRatios: Map[String, List[StockRatio]]
-                                        , cashRatios: Map[String, List[CashRatio]]
-                                        , stockCategory: Map[String, List[Stock]]
-                                         , cashCategory: Map[String, List[Country]])
+case class RatiosMessage(stockRatios: Map[String, List[StockRatio]]
+                        , cashRatios: Map[String, List[CashRatio]])
+object RatiosMessage {
+  implicit val format:Format[RatiosMessage] = Json.format
+}
+case class CategoriesMessage(stockCategory: Map[String, List[Stock]]
+                             , cashCategory: Map[String, List[Country]])
+object CategoriesMessage {
+  implicit val format:Format[CategoriesMessage] = Json.format
+}
+
+
+case class UpdatingGoalAssetRatioMessage(ratios: RatiosMessage
+                                        , categories: CategoriesMessage)
 object UpdatingGoalAssetRatioMessage {
   implicit val format:Format[UpdatingGoalAssetRatioMessage] = Json.format
 }
 
+sealed trait TradeHistoryMessage
+object TradeHistoryMessage{
+  implicit val format = Format[TradeHistoryMessage](
+    Reads { js =>
+      val tradeType = (JsPath \ "tradeType").read[String].reads(js)
+      tradeType.fold(
+        errors => JsError("tradeType undefined or incorrect"), {
+          case "Buy" => (JsPath \ "data").read[BuyTradeHistoryMessage].reads(js)
+          case "Sell" => (JsPath \ "data").read[SellTradeHistoryMessage].reads(js)
+        }
+      )
+    },
+    Writes {
+      case o: BuyTradeHistoryMessage =>
+        JsObject(
+          Seq(
+            "tradeType" -> JsString("Buy"),
+            "data" -> BuyTradeHistoryMessage.format.writes(o)
+          )
+        )
+      case o: SellTradeHistoryMessage =>
+        JsObject(
+          Seq(
+            "tradeType" -> JsString("Sell"),
+            "data" -> SellTradeHistoryMessage.format.writes(o)
+          )
+        )
+    }
+  )
+}
+case class BuyTradeHistoryMessage(amount: Int
+                                  , price: BigDecimal
+                                  , timestamp: Long) extends TradeHistoryMessage
+object BuyTradeHistoryMessage{
+  implicit val format:Format[BuyTradeHistoryMessage] = Json.format
+}
+case class SellTradeHistoryMessage(amount: Int
+                                  , price: BigDecimal
+                                  , timestamp: Long) extends TradeHistoryMessage
+object SellTradeHistoryMessage{
+  implicit val format:Format[SellTradeHistoryMessage] = Json.format
+}
 case class AddingStockMessage(stock: Stock
-                              , category: String, tradingHistories: Seq[AddingTradeHistory])
+                              , category: String, tradingHistories: Seq[TradeHistoryMessage])
 object AddingStockMessage {
   implicit val format:Format[AddingStockMessage] = Json.format
-
-  case class AddingTradeHistory(tradeType: TradeType
-                                       , amount: Int
-                                       , price: BigDecimal
-                                       , timestamp: Long)
-  object AddingTradeHistory {
-    implicit val format:Format[AddingTradeHistory] = Json.format
-  }
 }
 case class StockAddedMessage(stockHolding: StockHolding
                              , cashHolding: CashHolding, updateTimestamp: Long)
@@ -65,10 +106,7 @@ object StockDeletedMessage {
   implicit val format:Format[StockDeletedMessage] = Json.format
 }
 
-case class AddingTradeHistoryMessage(stock: Stock, tradeType: TradeType
-                              , amount: Int
-                              , price: BigDecimal
-                              , timestamp: Long)
+case class AddingTradeHistoryMessage(stock: Stock, history: TradeHistoryMessage)
 object AddingTradeHistoryMessage {
   implicit val format:Format[AddingTradeHistoryMessage] = Json.format
 }
@@ -91,10 +129,7 @@ object TradeHistoryDeletedMessage {
 
 case class UpdatingTradeHistoryMessage(stock: Stock
                                        , tradeHistoryId: String
-                                       , tradeType: TradeType
-                                       , amount: Int
-                                       , price: BigDecimal
-                                       , timestamp: Long)
+                                       , history: TradeHistoryMessage)
 object UpdatingTradeHistoryMessage {
   implicit val format:Format[UpdatingTradeHistoryMessage] = Json.format
 }
@@ -104,10 +139,80 @@ object TradeHistoryUpdatedMessage {
   implicit val format:Format[TradeHistoryUpdatedMessage] = Json.format
 }
 
-case class AddingCashFlowHistory(flowType: FlowType
-                                       , balance: Int
+sealed trait CashFlowHistoryMessage
+object CashFlowHistoryMessage{
+  implicit val format = Format[CashFlowHistoryMessage](
+    Reads { js =>
+      val cashFlowType = (JsPath \ "cashFlowType").read[String].reads(js)
+      cashFlowType.fold(
+        errors => JsError("cashFlowType undefined or incorrect"), {
+          case "DepositHistory"   => (JsPath \ "data").read[DepositHistoryMessage].reads(js)
+          case "WithdrawHistory"  => (JsPath \ "data").read[WithdrawHistoryMessage].reads(js)
+          case "SoldStockCashHistory"  => (JsPath \ "data").read[SoldStockCashHistoryMessage].reads(js)
+          case "BoughtStockCashHistory"  => (JsPath \ "data").read[BoughtStockCashHistoryMessage].reads(js)
+        }
+      )
+    },
+    Writes {
+      case o: DepositHistoryMessage  =>
+        JsObject(
+          Seq(
+            "cashFlowType" -> JsString("DepositHistory"),
+            "data"      -> DepositHistoryMessage.format.writes(o)
+          )
+        )
+      case o: WithdrawHistoryMessage =>
+        JsObject(
+          Seq(
+            "cashFlowType" -> JsString("WithdrawHistory"),
+            "data"      -> WithdrawHistoryMessage.format.writes(o)
+          )
+        )
+      case o: SoldStockCashHistoryMessage =>
+        JsObject(
+          Seq(
+            "cashFlowType" -> JsString("SoldStockCashHistory"),
+            "data"      -> SoldStockCashHistoryMessage.format.writes(o)
+          )
+        )
+      case o: BoughtStockCashHistoryMessage =>
+        JsObject(
+          Seq(
+            "cashFlowType" -> JsString("BoughtStockCashHistory"),
+            "data"      -> BoughtStockCashHistoryMessage.format.writes(o)
+          )
+        )
+    }
+  )
+}
+case class DepositHistoryMessage(balance: Int
+                                 , country: Country
+                                 , timestamp: Long) extends CashFlowHistoryMessage
+object DepositHistoryMessage{
+  implicit val format:Format[DepositHistoryMessage] = Json.format
+}
+case class WithdrawHistoryMessage(balance: Int
+                                 , country: Country
+                                 , timestamp: Long) extends CashFlowHistoryMessage
+object WithdrawHistoryMessage{
+  implicit val format:Format[WithdrawHistoryMessage] = Json.format
+}
+case class SoldStockCashHistoryMessage(balance: Int
+                                  , country: Country
+                                  , timestamp: Long) extends CashFlowHistoryMessage
+object SoldStockCashHistoryMessage{
+  implicit val format:Format[SoldStockCashHistoryMessage] = Json.format
+}
+case class BoughtStockCashHistoryMessage(balance: Int
                                        , country: Country
-                                       , timestamp: Long)
+                                       , timestamp: Long) extends CashFlowHistoryMessage
+object BoughtStockCashHistoryMessage{
+  implicit val format:Format[BoughtStockCashHistoryMessage] = Json.format
+}
+
+
+
+case class AddingCashFlowHistory(history: CashFlowHistoryMessage)
 object AddingCashFlowHistory {
   implicit val format:Format[AddingCashFlowHistory] = Json.format
 }
@@ -129,10 +234,7 @@ object CashFlowHistoryDeletedMessage {
 
 
 case class UpdatingCashFlowHistory(cashHistoryId: String
-                                   , flowType: FlowType
-                                   , country: Country
-                                   , balance: BigDecimal
-                                   , timestamp: Long)
+                                   , history: CashFlowHistoryMessage)
 object UpdatingCashFlowHistory {
   implicit val format:Format[UpdatingCashFlowHistory] = Json.format
 }
