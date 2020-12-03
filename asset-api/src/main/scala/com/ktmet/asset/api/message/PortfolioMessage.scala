@@ -2,8 +2,10 @@ package com.ktmet.asset.api.message
 
 import com.asset.collector.api.Country.Country
 import com.asset.collector.api.{Country, Stock}
+import com.ktmet.asset.api.message.PortfolioMessage.HoldingMessage
 import com.ktmet.asset.api.message.PortfolioStatusMessage.{AssetRatio, StockStatus}
 import com.ktmet.asset.api.{AssetCategory, CashFlowHistory, CashHolding, CashRatio, Category, GoalAssetRatio, Holdings, PortfolioId, PortfolioState, StockHolding, StockRatio, TradeHistory, UserId}
+import com.ktmet.asset.common.api.MapFormat
 import play.api.libs.json.{Format, JsError, JsObject, JsPath, JsResult, JsString, JsSuccess, JsValue, Json, Reads, Writes}
 
 case class TimestampMessage(updateTimestamp: Long)
@@ -146,10 +148,10 @@ object CashFlowHistoryMessage{
       val cashFlowType = (JsPath \ "cashFlowType").read[String].reads(js)
       cashFlowType.fold(
         errors => JsError("cashFlowType undefined or incorrect"), {
-          case "DepositHistory"   => (JsPath \ "data").read[DepositHistoryMessage].reads(js)
-          case "WithdrawHistory"  => (JsPath \ "data").read[WithdrawHistoryMessage].reads(js)
-          case "SoldStockCashHistory"  => (JsPath \ "data").read[SoldStockCashHistoryMessage].reads(js)
-          case "BoughtStockCashHistory"  => (JsPath \ "data").read[BoughtStockCashHistoryMessage].reads(js)
+          case "Deposit"   => (JsPath \ "data").read[DepositHistoryMessage].reads(js)
+          case "Withdraw"  => (JsPath \ "data").read[WithdrawHistoryMessage].reads(js)
+          case "SoldStockCash"  => (JsPath \ "data").read[SoldStockCashHistoryMessage].reads(js)
+          case "BoughtStockCash"  => (JsPath \ "data").read[BoughtStockCashHistoryMessage].reads(js)
         }
       )
     },
@@ -157,7 +159,7 @@ object CashFlowHistoryMessage{
       case o: DepositHistoryMessage  =>
         JsObject(
           Seq(
-            "cashFlowType" -> JsString("DepositHistory"),
+            "cashFlowType" -> JsString("Deposit"),
             "data"      -> DepositHistoryMessage.format.writes(o)
           )
         )
@@ -211,11 +213,6 @@ object BoughtStockCashHistoryMessage{
 }
 
 
-
-case class AddingCashFlowHistory(history: CashFlowHistoryMessage)
-object AddingCashFlowHistory {
-  implicit val format:Format[AddingCashFlowHistory] = Json.format
-}
 case class CashFlowHistoryAddedMessage(cashHolding: CashHolding, updateTimestamp: Long)
 object CashFlowHistoryAddedMessage {
   implicit val format:Format[CashFlowHistoryAddedMessage] = Json.format
@@ -265,34 +262,13 @@ case class PortfolioStatusMessage(totalAsset: BigDecimal, profitBalance: BigDeci
 object PortfolioStatusMessage {
 
   implicit val cashHoldingsReads: Reads[Map[Country, CashHolding]] =
-    new Reads[Map[Country, CashHolding]] {
-      def reads(jv: JsValue): JsResult[Map[Country, CashHolding]] =
-        JsSuccess(jv.as[Map[String, CashHolding]].map{case (k, v) =>
-          v.country -> v .asInstanceOf[CashHolding]
-        })}
-
+    MapFormat.read((_, v) => v.country)
   implicit val cashHoldingsWrites: Writes[Map[Country, CashHolding]] =
-    new Writes[Map[Country, CashHolding]] {
-      override def writes(o: Map[Country, CashHolding]): JsValue =
-        Json.obj(o.map{case (k, v) =>
-          k.toString -> Json.toJsFieldJsValueWrapper(v)
-        }.toSeq:_*)
-    }
-
+    MapFormat.write((k, _) => k.toString)
   implicit val stockHoldingsReads: Reads[Map[Stock, StockStatus]] =
-    new Reads[Map[Stock, StockStatus]] {
-      def reads(jv: JsValue): JsResult[Map[Stock, StockStatus]] =
-        JsSuccess(jv.as[Map[String, StockStatus]].map{case (k, v) =>
-          v.stock -> v .asInstanceOf[StockStatus]
-        })
-    }
+    MapFormat.read((_, v) => v.stock)
   implicit val stockHoldingsWrites: Writes[Map[Stock, StockStatus]] =
-    new Writes[Map[Stock, StockStatus]] {
-      override def writes(o: Map[Stock, StockStatus]): JsValue =
-        Json.obj(o.map{case (k, v) =>
-          k.code -> Json.toJsFieldJsValueWrapper(v)
-        }.toSeq:_*)
-    }
+    MapFormat.write((k, _) => k.code)
 
   case class StockStatus(stock: Stock, amount: Int, avgPrice: BigDecimal
                          , nowPrice: BigDecimal, profitBalance: BigDecimal
@@ -319,33 +295,13 @@ object PortfolioStatusMessage {
 
 
     implicit val stockRatiosReads: Reads[Map[Category, List[StockRatio]]] =
-      new Reads[Map[Category, List[StockRatio]]] {
-        def reads(jv: JsValue): JsResult[Map[Category, List[StockRatio]]] =
-          JsSuccess(jv.as[Map[String, List[StockRatio]]].map{case (k, v) =>
-            Category(k) -> v .asInstanceOf[List[StockRatio]]
-          })
-      }
+      MapFormat.read((k, _) => Category(k))
     implicit val stockRatiosWrites: Writes[Map[Category, List[StockRatio]]] =
-      new Writes[Map[Category, List[StockRatio]]] {
-        override def writes(o: Map[Category, List[StockRatio]]): JsValue =
-          Json.obj(o.map{case (k, v) =>
-            k.value -> Json.toJsFieldJsValueWrapper(v)
-          }.toSeq:_*)
-      }
+      MapFormat.write((k, _) => k.value)
     implicit val cashRatiosReads: Reads[Map[Category, List[CashRatio]]] =
-      new Reads[Map[Category, List[CashRatio]]] {
-        def reads(jv: JsValue): JsResult[Map[Category, List[CashRatio]]] =
-          JsSuccess(jv.as[Map[String, List[CashRatio]]].map{case (k, v) =>
-            Category(k) -> v .asInstanceOf[List[CashRatio]]
-          })
-      }
+      MapFormat.read((k, _) => Category(k))
     implicit val cashRatiosWrites: Writes[Map[Category, List[CashRatio]]] =
-      new Writes[Map[Category, List[CashRatio]]] {
-        override def writes(o: Map[Category, List[CashRatio]]): JsValue =
-          Json.obj(o.map{case (k, v) =>
-            k.value -> Json.toJsFieldJsValueWrapper(v)
-          }.toSeq:_*)
-      }
+      MapFormat.write((k, _) => k.value)
 
     implicit val format:Format[AssetRatio] = Json.format
   }
@@ -369,9 +325,24 @@ object PortfolioStockMessage {
 
 
 case class PortfolioMessage(portfolioId: String, name: String, updateTimestamp:Long, owner: String
-                            , goalAssetRatio: GoalAssetRatio, assetCategory: AssetCategory,  holdings: Holdings)
+                            , goalAssetRatio: GoalAssetRatio, assetCategory: AssetCategory,  holdings: HoldingMessage)
 object PortfolioMessage {
   implicit val format:Format[PortfolioMessage] = Json.format
+
+  case class HoldingMessage(cashHoldings: Map[Country, CashHolding]
+                            , stockHoldings: Map[Stock, StockHolding])
+  object HoldingMessage{
+    implicit val cashHoldingsReads: Reads[Map[Country, CashHolding]] =
+      MapFormat.read((_, v) => v.country)
+    implicit val cashHoldingsWrites: Writes[Map[Country, CashHolding]] =
+      MapFormat.write((k, _) => k.toString)
+
+    implicit val stockHoldingsReads: Reads[Map[Stock, StockHolding]] =
+      MapFormat.read((_, v) => v.stock)
+    implicit val stockHoldingsWrites: Writes[Map[Stock, StockHolding]] =
+      MapFormat.write((k, _) => k.code)
+    implicit val format:Format[HoldingMessage] = Json.format
+  }
 
   def apply(portfolioState: PortfolioState): PortfolioMessage =
     new PortfolioMessage(portfolioId = portfolioState.portfolioId.value
@@ -380,6 +351,7 @@ object PortfolioMessage {
       , owner = portfolioState.owner.value
       , goalAssetRatio = portfolioState.goalAssetRatio
       , assetCategory = portfolioState.assetCategory
-      , holdings = portfolioState.holdings)
+      , holdings = HoldingMessage(portfolioState.holdings.cashHoldingMap.map
+        , portfolioState.holdings.stockHoldingMap.map))
 }
 

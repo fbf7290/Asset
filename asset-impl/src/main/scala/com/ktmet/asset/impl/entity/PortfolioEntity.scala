@@ -66,7 +66,7 @@ object PortfolioEntity {
   case object NotFoundStockException extends ClientException(404, "NotFoundStockException", "NotFoundStockException") with Response
   case object TooManyCategoryException extends ClientException(409, "TooManyPortfolioException", "Too many portfolio") with Response
   case object TooManyStockException extends ClientException(409, "TooManyPortfolioException", "Too many portfolio") with Response
-
+  case object InvalidCashException extends ClientException(477, "InvalidCashException", "InvalidCashException") with Response
 
   sealed trait Event extends AggregateEvent[Event] {
     override def aggregateTag: AggregateEventTagger[Event] = Event.Tag
@@ -99,7 +99,6 @@ object PortfolioEntity {
   object CashFlowHistoryUpdated{
     implicit val format:Format[CashFlowHistoryUpdated] = Json.format
   }
-
   case class CashFlowHistoryDeleted(cashFlowHistory: CashFlowHistory, updateTimestamp: Long) extends Event
   object CashFlowHistoryDeleted{
     implicit val format:Format[CashFlowHistoryDeleted] = Json.format
@@ -262,7 +261,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
                       .thenReply(replyTo)(e =>
                         CashFlowHistoryAddedResponse(cashHolding
                           , e.state.get.updateTimestamp))
-          case Left(_) => Effect.reply(replyTo)(InvalidParameterException)
+          case Left(_) => Effect.reply(replyTo)(InvalidCashException)
         }
       }
     }
@@ -275,7 +274,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
           case Right(cashHolding) => Effect.persist(CashFlowHistoryUpdated(lastHistory, cashFlowHistory, Timestamp.now))
                       .thenReply(replyTo)(e =>
                         CashFlowHistoryUpdatedResponse(cashHolding, e.state.get.updateTimestamp))
-          case Left(_) => Effect.reply(replyTo)(InvalidParameterException)
+          case Left(_) => Effect.reply(replyTo)(InvalidCashException)
         }
         case None => Effect.reply(replyTo)(NotFoundHistoryException)
       }
@@ -288,23 +287,11 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
           case Right(cashHolding) => Effect.persist(CashFlowHistoryDeleted(cashFlowHistory, Timestamp.now))
                       .thenReply(replyTo)(e =>
                         CashFlowHistoryDeletedResponse(cashHolding, e.state.get.updateTimestamp))
-          case Left(_) => Effect.reply(replyTo)(InvalidParameterException)
+          case Left(_) => Effect.reply(replyTo)(InvalidCashException)
         }
         case None => Effect.reply(replyTo)(NotFoundHistoryException)
       }
-
-//      state.getHoldingCash(country) match {
-//        case None => Effect.reply(replyTo)(InvalidParameterException)
-//        case Some(cash) => cash.findHistory(cashFlowHistoryId) match {
-//          case Some(cashFlowHistory) => Effect.persist(CashFlowHistoryDeleted(cashFlowHistory, Timestamp.now))
-//            .thenReply(replyTo)(e =>
-//              CashFlowHistoryDeletedResponse(e.state.get.getHoldingCash(country).get
-//                , e.state.get.updateTimestamp))
-//          case None => Effect.reply(replyTo)(NotFoundHistoryException)
-//        }
-//      }
     }
-
   private def onAddStock(owner: UserId, stock: Stock, category: Category
                          , historySets: Seq[HistorySet], replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithOwner(owner, replyTo){ state =>
@@ -313,11 +300,13 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
           case true => Effect.reply(replyTo)(AlreadyStockException)
           case false => state.containCategory(category) match {
             case true =>
-              (StockHolding.empty(stock).addHistories(historySets.map(_.tradeHistory): _*)
-                , CashHolding.empty(stock.country).addHistories(historySets.map(_.cashFlowHistory): _*)) match {
+              val sortedSets = historySets.sortBy(_.tradeHistory).reverse
+              (StockHolding.empty(stock).addHistories(sortedSets.map(_.tradeHistory): _*)
+                , state.getHoldingCash(stock.country).addHistories(sortedSets.map(_.cashFlowHistory): _*)) match {
                 case (Right(stockHolding), Right(cashHolding)) =>
                   Effect.persist(StockAdded(stock, category, stockHolding, cashHolding, Timestamp.now))
                     .thenReply(replyTo)(e => StockAddedResponse(stockHolding, cashHolding, e.state.get.updateTimestamp))
+                case (Right(_), Left(_)) => Effect.reply(replyTo)(InvalidCashException)
                 case _ => Effect.reply(replyTo)(InvalidParameterException)
               }
             case false => Effect.reply(replyTo)(NotFoundCategoryException)
@@ -341,6 +330,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
                   Effect.persist(TradeHistoryAdded(historySet, Timestamp.now))
                     .thenReply(replyTo)(e =>
                       TradeHistoryAddedResponse(stockHolding, cashHolding, e.state.get.updateTimestamp))
+                case (Right(_), Left(_)) => Effect.reply(replyTo)(InvalidCashException)
                 case _ => Effect.reply(replyTo)(InvalidParameterException)
               }
           }
@@ -360,6 +350,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
                   Effect.persist(TradeHistoryDeleted(tradeHistory, cashFlowHistory, Timestamp.now))
                     .thenReply(replyTo)(e =>
                       TradeHistoryDeletedResponse(stockHolding, cashHolding, e.state.get.updateTimestamp))
+                case (Right(_), Left(_)) => Effect.reply(replyTo)(InvalidCashException)
                 case _ => Effect.reply(replyTo)(InvalidParameterException)
               }
 
@@ -384,6 +375,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
                     Effect.persist(TradeHistoryUpdated(HistorySet(tradeHistory, cashFlowHistory), historySet, Timestamp.now))
                         .thenReply(replyTo)(e =>
                           TradeHistoryUpdatedResponse(stockHolding, cashHolding, e.state.get.updateTimestamp))
+                  case (Right(_), Left(_)) => Effect.reply(replyTo)(InvalidCashException)
                   case _ => Effect.reply(replyTo)(InvalidParameterException)
                 }
               case None => Effect.reply(replyTo)(NotFoundHistoryException)
