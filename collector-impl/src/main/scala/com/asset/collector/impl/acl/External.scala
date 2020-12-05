@@ -99,7 +99,7 @@ object External {
           .map(arr => Price(code, arr(0), BigDecimal(arr(4)), BigDecimal(arr(1)), BigDecimal(arr(2)), BigDecimal(arr(3)), arr(5).toLong)).toSeq
     }
 
-  def requestUsaStockPrice(code:String, year:Int=100)(implicit ec: ExecutionContext):Future[Seq[Price]] =
+  def requestUsaStockPrice(code:String, year:Int=10)(implicit ec: ExecutionContext):Future[Seq[Price]] =
     Future{
       val from = Calendar.getInstance()
       from.add(Calendar.YEAR, -1*year)

@@ -34,7 +34,7 @@ object AssetSettings {
 
   val defaultMaxPortfolioSize = sys.env.get("DEFAULT_MAX_PORTFOLIO_SIZE") match {
     case Some(value) => value.toInt
-    case None => 2   // 유저 최대 포트폴리오 개수
+    case None => 2000   // 유저 최대 포트폴리오 개수
   }
 
   val maxCategorySize = sys.env.get("MAX_CATEGORY_SIZE") match {
@@ -45,5 +45,10 @@ object AssetSettings {
   val maxStockSize = sys.env.get("MAX_STOCK_SIZE") match {
     case Some(value) => value.toInt
     case None => 50
+  }
+
+  val koreaStockTax = sys.env.get("KOREA_STOCK_TAX") match {
+    case Some(value) => BigDecimal(value)
+    case None => BigDecimal(0.0025)
   }
 }

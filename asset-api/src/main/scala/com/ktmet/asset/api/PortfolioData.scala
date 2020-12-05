@@ -1,3 +1,4 @@
+
 package com.ktmet.asset.api
 
 
@@ -39,6 +40,7 @@ case class GoalAssetRatio(stockRatios: Map[Category, List[StockRatio]]
     cashRatios.map{ case (c, l) => c -> l.map(_.ratio).fold(0)(_+_)}
   def isValid = if(getCategoryRatios.values.fold(0)(_+_) == 100) true else false
   def getCategories: Set[Category] = stockRatios.keySet ++ cashRatios.keySet
+  def getStocks: Iterable[Stock] = stockRatios.values.flatten.map(_.stock)
 }
 object GoalAssetRatio{
 
@@ -186,7 +188,12 @@ case class StockHolding(stock: Stock, amount: Int
       case history: SellTradeHistory =>
         if(buyAmount == 0 || buyBalance == 0) history.copy(realizedProfitBalance = BigDecimal(0), realizedProfitRate = BigDecimal(0))
         else {
-          val diff = history.price - buyBalance/buyAmount
+          val taxRatio = stock.country match {
+            case Country.KOREA => AssetSettings.koreaStockTax
+            case Country.USA => BigDecimal(0)
+          }
+          val tax = taxRatio * history.price
+          val diff = history.price - tax - buyBalance/buyAmount
           val realizedProfitBalance = Country.setScale(diff * history.amount)(stock.country)
           totalRealizedProfitBalance += realizedProfitBalance
           val newHistory = history.copy(realizedProfitBalance = realizedProfitBalance
