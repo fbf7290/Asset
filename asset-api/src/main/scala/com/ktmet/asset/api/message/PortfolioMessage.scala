@@ -247,7 +247,8 @@ case class UpdatingStockCategory(stock: Stock
 object UpdatingStockCategory {
   implicit val format:Format[UpdatingStockCategory] = Json.format
 }
-case class StockCategoryUpdatedMessage(updateTimestamp: Long)
+case class StockCategoryUpdatedMessage(goalAssetRatio: GoalAssetRatio
+                                       , assetCategory: AssetCategory, updateTimestamp: Long)
 object StockCategoryUpdatedMessage {
   implicit val format:Format[StockCategoryUpdatedMessage] = Json.format
 }

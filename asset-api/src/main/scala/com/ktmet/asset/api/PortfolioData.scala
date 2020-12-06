@@ -35,12 +35,32 @@ case class GoalAssetRatio(stockRatios: Map[Category, List[StockRatio]]
                           , cashRatios: Map[Category, List[CashRatio]]){
   def isLimitCategorySize: Boolean = stockRatios.size >= AssetSettings.maxCategorySize
   def containCategory(category: Category): Boolean = stockRatios.contains(category)
-  def addCategory(category: Category): GoalAssetRatio = copy(stockRatios = stockRatios + (category -> List.empty))
+  def addCategory(category: Category): GoalAssetRatio =
+    copy(stockRatios = stockRatios + (category -> List.empty))
+  def addStock(category: Category, stock: Stock): Option[GoalAssetRatio] =
+    stockRatios.get(category) match {
+      case Some(ratios) => ratios.find(_.stock == stock) match {
+        case Some(_) => Some(this)
+        case None => Some(copy(stockRatios = stockRatios + (category -> (StockRatio(stock, 0) :: ratios))))
+      }
+      case None => None
+    }
   def getCategoryRatios: Map[Category, Int] = stockRatios.map{ case (c, l) => c -> l.map(_.ratio).fold(0)(_+_)} ++
     cashRatios.map{ case (c, l) => c -> l.map(_.ratio).fold(0)(_+_)}
   def isValid = if(getCategoryRatios.values.fold(0)(_+_) == 100) true else false
   def getCategories: Set[Category] = stockRatios.keySet ++ cashRatios.keySet
   def getStocks: Iterable[Stock] = stockRatios.values.flatten.map(_.stock)
+  def changeCategory(stock: Stock, lastCategory: Category, newCategory: Category): Option[GoalAssetRatio] = {
+    stockRatios.get(lastCategory) match {
+      case Some(ratios) => ratios.find(_.stock == stock) match {
+        case Some(ratio) => Some(copy(stockRatios = stockRatios
+          + (lastCategory -> ratios.filterNot(_.stock == stock))
+          + (newCategory -> stockRatios.get(newCategory).fold(List(ratio))(ratios => ratio :: ratios))))
+        case None => None
+      }
+      case None => None
+    }
+  }
 }
 object GoalAssetRatio{
 
@@ -444,8 +464,8 @@ case class CashHolding(country: Country, balance: BigDecimal, cashFlowHistories:
   private def removeHistory(balance: BigDecimal, histories: List[CashFlowHistory]
                            , history: CashFlowHistory): (BigDecimal, List[CashFlowHistory]) =
     (history match {
-      case _: WithdrawHistory | _: BoughtStockCashHistory => balance - history.balance
-      case _: DepositHistory | _: SoldStockCashHistory => balance + history.balance
+      case _: WithdrawHistory | _: BoughtStockCashHistory => balance + history.balance
+      case _: DepositHistory | _: SoldStockCashHistory => balance - history.balance
     }, histories.filterNot(_ == history))
   def addHistories(histories: CashFlowHistory *): Either[Throwable, CashHolding] = {
 
@@ -600,6 +620,8 @@ case class PortfolioState(portfolioId: PortfolioId, name: String, updateTimestam
                           , goalAssetRatio: GoalAssetRatio, assetCategory: AssetCategory,  holdings: Holdings) {
   def updateTimestamp(timestamp: Long): PortfolioState = copy(updateTimestamp = timestamp)
   def containCategory(category: Category): Boolean = goalAssetRatio.containCategory(category)
+  def addGoalAssetRatio(category: Category, stock: Stock): PortfolioState = copy(goalAssetRatio = goalAssetRatio.addStock(category, stock).get)
+  def changeGoalAssetRatioCategory(stock: Stock, lastCategory: Category, newCategory: Category): PortfolioState = copy(goalAssetRatio = goalAssetRatio.changeCategory(stock, lastCategory, newCategory).get)
   def addCategory(category: Category): PortfolioState = copy(goalAssetRatio = goalAssetRatio.addCategory(category))
   def addAssetCategory(category: Category, stock: Stock): PortfolioState = copy(assetCategory = assetCategory.addStock(category, stock))
   def containAssetCategory(category: Category, stock: Stock): Boolean = assetCategory.contain(category, stock)

@@ -2,7 +2,7 @@ package com.ktmet.asset.api
 
 import akka.{Done, NotUsed}
 import com.asset.collector.api.{KrwUsd, NowPrice, Stock}
-import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, PortfolioCreatedMessage, PortfolioMessage, PortfolioStatusMessage, PortfolioStockMessage, RefreshingToken, SocialLoggingIn, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage, UserMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, NowPrices, PortfolioCreatedMessage, PortfolioMessage, PortfolioStatusMessage, PortfolioStockMessage, RefreshingToken, SocialLoggingIn, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage, UserMessage}
 import com.ktmet.asset.common.api.ClientExceptionSerializer
 import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Descriptor, Service, ServiceAcl, ServiceCall}
@@ -22,6 +22,7 @@ trait AssetService extends Service{
 
   def autoCompleteStock(prefix:String): ServiceCall[NotUsed, AutoCompleteMessage]
   def getNowPrice(code:String): ServiceCall[NotUsed, NowPrice]
+  def getNowPrices(codes: List[String]): ServiceCall[NotUsed, NowPrices]
   def getNowKrwUsd: ServiceCall[NotUsed, KrwUsd]
 
   def createPortfolio: ServiceCall[CreatingPortfolioMessage, PortfolioCreatedMessage]
@@ -61,6 +62,7 @@ trait AssetService extends Service{
         restCall(Method.GET, "/search/prefix/:prefix", autoCompleteStock _),
         restCall(Method.GET, "/stock/now/:code", getNowPrice _),
         restCall(Method.GET, "/krwusd", getNowKrwUsd _),
+        restCall(Method.GET, "/stock/now?codes", getNowPrices _),
 
         restCall(Method.POST, "/portfolio", createPortfolio),
         restCall(Method.DELETE, "/portfolio/:portfolioId", deletePortfolio _),

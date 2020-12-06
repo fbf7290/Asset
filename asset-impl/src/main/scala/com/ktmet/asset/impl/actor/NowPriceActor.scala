@@ -18,12 +18,13 @@ object NowPriceActor {
   case object CollectTimer extends Command
   case class GetPrice(code:String, replyTo:ActorRef[Response]) extends Command
   case class GetKrwUsd(replyTo:ActorRef[Response]) extends Command
-  case class GetPrices(stocks: Seq[Stock], replyTo: ActorRef[PricesResponse]) extends Command
+  case class GetPrices(stocks: Seq[String], replyTo: ActorRef[PricesResponse]) extends Command
   case class GetPricesAndKrwUsd(stocks: Seq[Stock], replyTo: ActorRef[PricesAndKrwUsdResponse]) extends Command
+
 
   sealed trait Response
   case class PriceResponse(price:NowPrice) extends Response
-  case class PricesResponse(prices: Map[Stock, Option[NowPrice]]) extends Response
+  case class PricesResponse(prices: Map[String, Option[NowPrice]]) extends Response
   case class KrwUsdResponse(krwUsd: KrwUsd) extends Response
   case class PricesAndKrwUsdResponse(prices: Map[Stock, Option[NowPrice]], krwUsd: KrwUsd) extends Response
   case object NotFoundStock extends Response
@@ -68,6 +69,13 @@ object NowPriceActor {
                 }
               case NowKrwUsd(krwUsd) =>
                 init(koreaPrices, usaPrices, krwUsd)
+
+              case CollectTimer =>
+                collectKoreaPrices
+                collectUsaPrices
+                collectKrwUsd
+                Behaviors.same
+
               case other =>
                 buffer.stash(other)
                 Behaviors.same
@@ -95,8 +103,14 @@ object NowPriceActor {
                 }
                 Behaviors.same
               case GetPrices(stocks, replyTo) =>
-                replyTo ! PricesResponse(stocks.foldLeft(Map.empty[Stock, Option[NowPrice]])((res, stock) =>
-                  res + (stock -> koreaPrices.get(stock.code.toUpperCase))))
+                replyTo ! PricesResponse(stocks.foldLeft(Map.empty[String, Option[NowPrice]])((res, code) =>
+                  res + (code -> (koreaPrices.get(code.toUpperCase) match {
+                    case Some(price) => Some(price)
+                    case None => usaPrices.get(code.toUpperCase) match {
+                      case Some(price) => Some(price)
+                      case None => None
+                    }
+                  }))))
                 Behaviors.same
               case GetKrwUsd(replyTo) =>
                 replyTo ! KrwUsdResponse(krwUsd)
@@ -105,7 +119,13 @@ object NowPriceActor {
               case GetPricesAndKrwUsd(stocks, replyTo) =>
                 replyTo ! PricesAndKrwUsdResponse(
                   stocks.foldLeft(Map.empty[Stock, Option[NowPrice]])((res, stock) =>
-                    res + (stock -> koreaPrices.get(stock.code.toUpperCase)))
+                    res + (stock -> (koreaPrices.get(stock.code.toUpperCase) match {
+                      case Some(price) => Some(price)
+                      case None => usaPrices.get(stock.code.toUpperCase) match {
+                        case Some(price) => Some(price)
+                        case None => None
+                      }
+                    })))
                   , krwUsd
                 )
                 Behaviors.same
