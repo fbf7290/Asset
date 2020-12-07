@@ -313,7 +313,8 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
             (prices.map { case (stock, maybePrice) =>
               maybePrice match {
                 case Some(nowPrice) => stock -> nowPrice.price
-                case None => stock -> portfolioState.getHoldingStock(stock).get.tradeHistories.headOption.fold(BigDecimal(0))(_.price)
+                case None => stock -> BigDecimal(0)
+//                  portfolioState.getHoldingStock(stock).get.tradeHistories.headOption.fold(BigDecimal(0))(_.price)
               }
             }, krwUsd)
           }
