@@ -1,5 +1,6 @@
 package com.asset.collector.api
 
+import akka.stream.scaladsl.Source
 import akka.{Done, NotUsed}
 import com.asset.collector.api.Market.Market
 import com.asset.collector.api.message.GettingClosePricesAfterDate
@@ -18,8 +19,10 @@ trait CollectorService extends Service{
   def getUsaNowPrices: ServiceCall[NotUsed, Map[String, NowPrice]]
   def getNowKrwUsd: ServiceCall[NotUsed, KrwUsd]
 
-  def getClosePricesAfterDate: ServiceCall[GettingClosePricesAfterDate, Seq[ClosePrice]]
+  def getClosePricesAfterDate1: ServiceCall[GettingClosePricesAfterDate, Seq[ClosePrice]]
   def getKrwUsdsAfterDate(date: String): ServiceCall[NotUsed, Seq[KrwUsd]]
+
+  def getClosePricesAfterDate: ServiceCall[GettingClosePricesAfterDate, Source[ClosePrice, NotUsed]]
 
   def insertKoreaStockPrice(code:String): ServiceCall[NotUsed, Done]
   def insertUsaStockPrice(code:String): ServiceCall[NotUsed, Done]
@@ -45,6 +48,7 @@ trait CollectorService extends Service{
         restCall(Method.GET, "/collect/krwusd", getNowKrwUsd),
 
         restCall(Method.GET, "/stock/prices/close", getClosePricesAfterDate),
+        restCall(Method.GET, "/stock/prices/close1", getClosePricesAfterDate1),
         restCall(Method.GET, "/krwusds/:date", getKrwUsdsAfterDate _),
 
         restCall(Method.POST, "/stock/korea/batch", requestBatchKoreaStock),
@@ -58,3 +62,4 @@ trait CollectorService extends Service{
 
   }
 }
+// TODO getClosePricesAfterDate => stream 변경

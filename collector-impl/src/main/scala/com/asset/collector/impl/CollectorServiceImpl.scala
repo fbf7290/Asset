@@ -133,12 +133,20 @@ class CollectorServiceImpl(val system: ActorSystem
       .map(_ => (ResponseHeader.Ok.withStatus(200), Done))
   }
 
-  override def getClosePricesAfterDate: ServiceCall[GettingClosePricesAfterDate, Seq[ClosePrice]] =
+  override def getClosePricesAfterDate1: ServiceCall[GettingClosePricesAfterDate, Seq[ClosePrice]] =
     ServerServiceCall { (_, gettingClosePricesAfterDate) =>
-      StockRepoAccessor.selectClosePricesAfterDate(gettingClosePricesAfterDate.stock
+      StockRepoAccessor.selectClosePricesAfterDate1(gettingClosePricesAfterDate.stock
         , gettingClosePricesAfterDate.date).run(stockDb)
         .map(prices => (ResponseHeader.Ok.withStatus(200), prices))
     }
+
+  override def getClosePricesAfterDate: ServiceCall[GettingClosePricesAfterDate, Source[ClosePrice, NotUsed]] =
+    ServerServiceCall { (_, gettingClosePricesAfterDate) =>
+      Future.successful(ResponseHeader.Ok.withStatus(200)
+        , StockRepoAccessor.selectClosePricesAfterDate(stockDb, gettingClosePricesAfterDate.stock
+        , gettingClosePricesAfterDate.date))
+    }
+
 
   override def getKrwUsdsAfterDate(date: String): ServiceCall[NotUsed, Seq[KrwUsd]] =
     ServerServiceCall { (_, _) =>

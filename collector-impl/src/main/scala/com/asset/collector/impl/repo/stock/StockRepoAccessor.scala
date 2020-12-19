@@ -1,6 +1,7 @@
 package com.asset.collector.impl.repo.stock
 
-import akka.Done
+import akka.{Done, NotUsed}
+import akka.stream.scaladsl.Source
 import cats.Monad
 import cats.data.ReaderT
 import com.asset.collector.api.Country.Country
@@ -40,11 +41,6 @@ object StockRepoAccessor {
       db => db.createPriceTable(country)
     }
 
-  def selectLatestTimestamp[F[_]:Monad](country:Country, code:String):ReaderT[F, StockRepoTrait[F], Option[String]] =
-    ReaderT[F, StockRepoTrait[F], Option[String]] {
-      db => db.selectLatestTimestamp(country, code)
-    }
-
   def insertPrice[F[_]:Monad](country:Country, price:Price):ReaderT[F, StockRepoTrait[F], Done] =
     ReaderT[F, StockRepoTrait[F], Done] {
       db => db.insertPrice(country, price)
@@ -55,11 +51,14 @@ object StockRepoAccessor {
       db => db.insertBatchPrice(country, prices)
     }
 
-  def selectClosePricesAfterDate[F[_]:Monad](stock: Stock, date: String):ReaderT[F, StockRepoTrait[F], Seq[ClosePrice]] =
-    ReaderT[F, StockRepoTrait[F], Seq[ClosePrice]] {
-      db => db.selectClosePricesAfterDate(stock, date)
-    }
+  def selectClosePricesAfterDate[F[_]:Monad](db: StockRepoTrait[F], stock: Stock, date: String):Source[ClosePrice, NotUsed] =
+    db.selectClosePricesAfterDate(stock, date)
 
+
+  def selectClosePricesAfterDate1[F[_]:Monad](stock: Stock, date: String):ReaderT[F, StockRepoTrait[F], Seq[ClosePrice]] =
+    ReaderT[F, StockRepoTrait[F], Seq[ClosePrice]] {
+      db => db.selectClosePricesAfterDate1(stock, date)
+    }
 
   def createNowPriceTable[F[_]:Monad](country:Country):ReaderT[F, StockRepoTrait[F], Done] =
     ReaderT[F, StockRepoTrait[F], Done] {

@@ -1,10 +1,10 @@
 package com.asset.collector.impl.repo.stock
 
-import akka.Done
+import akka.stream.scaladsl.Source
+import akka.{Done, NotUsed}
 import com.asset.collector.api.Country.Country
 import com.asset.collector.api.Market.Market
 import com.asset.collector.api.{ClosePrice, KrwUsd, NowPrice, Price, Stock}
-
 
 trait StockRepoTrait[F[_]] {
   def createStockTable(country:Country):F[Done]
@@ -14,10 +14,10 @@ trait StockRepoTrait[F[_]] {
   def deleteStock(country: Country, stock:Stock):F[Done]
 
   def createPriceTable(country:Country):F[Done]
-  def selectLatestTimestamp(country: Country, code: String):F[Option[String]]
   def insertPrice(country:Country, price:Price):F[Done]
   def insertBatchPrice(country: Country, prices:Seq[Price]):F[Done]
-  def selectClosePricesAfterDate(stock: Stock, date:String):F[Seq[ClosePrice]]
+  def selectClosePricesAfterDate(stock: Stock, date:String): Source[ClosePrice, NotUsed]
+  def selectClosePricesAfterDate1(stock: Stock, date:String): F[Seq[ClosePrice]]
 
   def createNowPriceTable(country: Country):F[Done]
   def selectNowPrices(country: Country):F[Seq[NowPrice]]

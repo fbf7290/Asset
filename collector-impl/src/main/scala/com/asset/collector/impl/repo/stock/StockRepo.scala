@@ -1,6 +1,7 @@
 package com.asset.collector.impl.repo.stock
 
-import akka.Done
+import akka.{Done, NotUsed}
+import akka.stream.scaladsl.Source
 import cats.data.OptionT
 import cats.instances.future._
 import com.asset.collector.api.Country.Country
@@ -11,7 +12,7 @@ import com.datastax.driver.core.BatchStatement
 import scala.concurrent.{ExecutionContext, Future}
 
 
-
+// TODO price date 반대로 하기 => 다시 수집만 하면 됨
 case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionContext) extends StockRepoTrait[Future]{
 
   override def createStockTable(country: Country): Future[Done] =
@@ -44,10 +45,7 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
     session.executeWrite(s"DELETE FROM ${country}_stock where ignored='1' and code='${stock.code}'")
 
   override def createPriceTable(country: Country): Future[Done] =
-    session.executeCreateTable(s"create table if not exists ${country}_price (code TEXT, date TEXT, close DECIMAL, open DECIMAL, low DECIMAL, high DECIMAL, volume bigint, PRIMARY KEY(code, date)) WITH CLUSTERING ORDER BY (date DESC)")
-
-  override def selectLatestTimestamp(country: Country, code: String): Future[Option[String]] =
-    session.selectOne(s"select date from ${country}_price where code='${code}").map(_.map(_.getString("data")))
+    session.executeCreateTable(s"create table if not exists ${country}_price (code TEXT, date TEXT, close DECIMAL, open DECIMAL, low DECIMAL, high DECIMAL, volume bigint, PRIMARY KEY(code, date))")
 
   override def insertPrice(country:Country, price: Price): Future[Done] =
     session.executeWrite(s"INSERT INTO ${country}_price (code, date, close, open, low, high, volume) VALUES ('${price.code}', ${price.date}, ${price.close}, ${price.open}, ${price.low}, ${price.high}, ${price.volume}")
@@ -72,9 +70,15 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
     }
   }
 
-  override def selectClosePricesAfterDate(stock: Stock, date: String): Future[Seq[ClosePrice]] =
+  override def selectClosePricesAfterDate(stock: Stock, date: String): Source[ClosePrice, NotUsed] =
+    session.select(s"SELECT date, close FROM ${stock.country}_price " +
+      s"where code='${stock.code}' and date>='${date}'")
+      .map( row => ClosePrice(stock.code, row.getString("date")
+      , BigDecimal(row.getDecimal("close"))))
+
+  override def selectClosePricesAfterDate1(stock: Stock, date: String): Future[Seq[ClosePrice]] =
     session.selectAll(s"SELECT date, close FROM ${stock.country}_price " +
-      s"where code='${stock.code}' and date>'${date}'").map{ rows =>
+      s"where code='${stock.code}' and date>='${date}'").map{ rows =>
       rows.map{ row => ClosePrice(stock.code, row.getString("date")
         , BigDecimal(row.getDecimal("close")))}}
 
@@ -122,7 +126,7 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
   }
 
   override def selectKrwUsdsAfterDate(date: String): Future[Seq[KrwUsd]] = {
-    session.selectAll(s"SELECT date, rate FROM krw_usd where ignored='1' and date>'${date}'")
+    session.selectAll(s"SELECT date, rate FROM krw_usd where ignored='1' and date>='${date}'")
       .map{ rows => rows.map{row => KrwUsd(row.getString("date"), row.getDecimal("rate"))}}
   }
 }

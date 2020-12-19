@@ -39,16 +39,21 @@ object AssetSettings {
 
   val maxCategorySize = sys.env.get("MAX_CATEGORY_SIZE") match {
     case Some(value) => value.toInt
-    case None => 20
+    case None => 10
   }
 
   val maxStockSize = sys.env.get("MAX_STOCK_SIZE") match {
     case Some(value) => value.toInt
-    case None => 50
+    case None => 20
   }
 
   val koreaStockTax = sys.env.get("KOREA_STOCK_TAX") match {
     case Some(value) => BigDecimal(value)
     case None => BigDecimal(0.0025)
+  }
+
+  val minStatisticDate = sys.env.get("MIN_STATISTIC_DATE") match {
+    case Some(value) => value
+    case None => "20100101"
   }
 }
