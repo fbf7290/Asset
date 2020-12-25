@@ -24,7 +24,7 @@ import com.asset.collector.impl.repo.stock.{StockRepo, StockRepoAccessor}
 import com.ktmet.asset.api.message.PortfolioStatusMessage.StockStatus
 import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, BuyTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, DepositHistoryMessage, MarketValueMessage, NowPrices, PortfolioCreatedMessage, PortfolioMessage, PortfolioMessageConverter, PortfolioStatusMessage, PortfolioStockMessage, SellTradeHistoryMessage, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, StockMarketValueOverTimeMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage}
 import com.ktmet.asset.common.api.{ClientException, Timestamp}
-import com.ktmet.asset.impl.actor.StatisticSharding.{HoldAmount, MarketValue, StockHoldAmountOverTime, StockMarketValueOverTime}
+import com.ktmet.asset.impl.actor.StatisticSharding.{HoldAmount, DateValue, StockHoldAmountOverTime, StockValueOverTime}
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
 import com.lightbend.lagom.scaladsl.api.transport.{BadRequest, ResponseHeader}
@@ -458,18 +458,18 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
       }
 
 
-      def calculateStockMarketValue(stockStatusOverTime: StockHoldAmountOverTime): Future[Option[StockMarketValueOverTime]] = {
+      def calculateStockMarketValue(stockStatusOverTime: StockHoldAmountOverTime): Future[Option[StockValueOverTime]] = {
         var (holdAmount, nextHoldAmount, nextHoldAmounts) =
           if(stockStatusOverTime.holdAmounts.size >= 2)
             (stockStatusOverTime.holdAmounts.head, stockStatusOverTime.holdAmounts.tail.headOption, stockStatusOverTime.holdAmounts.tail.tail)
           else (stockStatusOverTime.holdAmounts.head, None, List.empty)
         var lastClosePrice: Option[ClosePrice] = None
 
-        def rangeMarketValue(closePrice: ClosePrice, fromDate: String, toDate: String): List[MarketValue] =
+        def rangeMarketValue(closePrice: ClosePrice, fromDate: String, toDate: String): List[DateValue] =
           Timestamp.rangeDateString(fromDate, toDate).map{ date =>
                 nextHoldAmount match {
                   case Some(nextAmount) =>
-                    if(date < nextAmount.date) MarketValue(date, closePrice.price * holdAmount.amount)
+                    if(date < nextAmount.date) DateValue(date, closePrice.price * holdAmount.amount)
                     else {
                       holdAmount = nextAmount
                       nextHoldAmounts.headOption.fold{
@@ -479,9 +479,9 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
                         nextHoldAmount = nextHoldAmounts.headOption
                         nextHoldAmounts = nextHoldAmounts.tail
                       }
-                      MarketValue(date, closePrice.price * nextAmount.amount)
+                      DateValue(date, closePrice.price * nextAmount.amount)
                     }
-                  case None => MarketValue(date, closePrice.price * holdAmount.amount)
+                  case None => DateValue(date, closePrice.price * holdAmount.amount)
                 }
             }
 
@@ -519,10 +519,10 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
             .map{ marketValues =>
               lastClosePrice match {
                 case Some(lastClosePrice) =>
-                  Some(StockMarketValueOverTime(stockStatusOverTime.stock, marketValues.flatten
+                  Some(StockValueOverTime(stockStatusOverTime.stock, marketValues.flatten
                     ++ rangeMarketValue(lastClosePrice, lastClosePrice.date
                     , Timestamp.timestampToTomorrowDateString(Timestamp.now))))
-                case None => Some(StockMarketValueOverTime(stockStatusOverTime.stock, marketValues.flatten))
+                case None => Some(StockValueOverTime(stockStatusOverTime.stock, marketValues.flatten))
               }
             }.recover{ case e =>
             println(e)
@@ -546,7 +546,7 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
       } yield{
         val r = result match {
           case None => StockMarketValueOverTimeMessage(stockObj, Seq.empty)
-          case Some(value) => StockMarketValueOverTimeMessage(stockObj, value.marketValue.map(i => MarketValueMessage(i.date, i.value)))
+          case Some(value) => StockMarketValueOverTimeMessage(stockObj, value.value.map(i => MarketValueMessage(i.date, i.value)))
         }
         (ResponseHeader.Ok.withStatus(200), r)
       }
@@ -588,3 +588,4 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
 
 }
 // TODO 상장폐지 종목에 대한 처리
+// TODO 환율 데이터 메모리화?

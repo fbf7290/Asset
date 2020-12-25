@@ -12,7 +12,6 @@ import com.datastax.driver.core.BatchStatement
 import scala.concurrent.{ExecutionContext, Future}
 
 
-// TODO price date 반대로 하기 => 다시 수집만 하면 됨
 case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionContext) extends StockRepoTrait[Future]{
 
   override def createStockTable(country: Country): Future[Done] =

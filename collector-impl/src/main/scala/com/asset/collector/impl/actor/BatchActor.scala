@@ -8,7 +8,7 @@ import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.stream.{Materializer, OverflowStrategy}
 import akka.stream.scaladsl.{Sink, Source}
-import com.asset.collector.api.{CollectorSettings, Country, Market, Price, Stock}
+import com.asset.collector.api.{CollectorSettings, Country, KrwUsd, Market, Price, Stock}
 import com.asset.collector.impl.repo.stock.{StockRepoAccessor, StockRepoTrait}
 import play.api.libs.ws.WSClient
 
@@ -20,6 +20,7 @@ import com.asset.collector.impl.Fcm
 import com.asset.collector.impl.Fcm.FcmMessage
 import com.asset.collector.impl.acl.External
 import com.asset.collector.impl.actor.BatchActor.Command
+import com.ktmet.asset.common.api.Timestamp
 import play.api.libs.json.JsNull
 
 import scala.collection.mutable
@@ -185,7 +186,18 @@ object BatchActor {
               replyTo.map(_.tell(Reply))
               context.pipeToSelf{
                 External.requestKrwUsds().flatMap{ krwUsds =>
-                  StockRepoAccessor.insertBatchKrwUsd[Future](krwUsds).run(stockDb)
+                  var lastKrwUsd = KrwUsd.empty
+                  val r = krwUsds.sliding(2).flatMap{ slideIt =>
+                    slideIt.toList match {
+                      case elem1 :: elem2 :: Nil =>
+                        lastKrwUsd = elem2
+                        Timestamp.rangeDateString(elem1.date, elem2.date).map{ date =>
+                          KrwUsd(date, elem1.rate)
+                        }
+                      case _ => throw new ArrayIndexOutOfBoundsException
+                    }
+                  }.toList
+                  StockRepoAccessor.insertBatchKrwUsd[Future](r ::: List(lastKrwUsd)).run(stockDb)
                 }
               }{
                 case Success(_) =>

@@ -62,4 +62,3 @@ trait CollectorService extends Service{
 
   }
 }
-// TODO getClosePricesAfterDate => stream 변경

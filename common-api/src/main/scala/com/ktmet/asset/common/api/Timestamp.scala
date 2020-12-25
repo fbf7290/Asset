@@ -13,6 +13,7 @@ object Timestamp {
 
   def now = Instant.now().getEpochSecond
   def nowMilli = Instant.now().toEpochMilli()
+
   def nowHour = ZonedDateTime.now(Timestamp.zoneId).getHour
   def nowMinute = ZonedDateTime.now(Timestamp.zoneId).getMinute
 
