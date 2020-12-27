@@ -7,12 +7,14 @@ import play.api.libs.ws.WSClient
 import akka.actor.typed.scaladsl.adapter._
 import com.ktmet.asset.api.{AssetService, AssetSettings, PortfolioId, UserId}
 import com.ktmet.asset.common.api.AuthorizationException
+import com.ktmet.asset.impl.actor.StatisticSharding
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
 import com.lightbend.lagom.scaladsl.api.transport.RequestHeader
 import pdi.jwt.{JwtAlgorithm, JwtJson}
 import pdi.jwt.exceptions.JwtExpirationException
 
 import scala.concurrent.ExecutionContext
+import scala.reflect.internal.util.StatisticsStatics
 import scala.util.{Failure, Success}
 
 trait ImplBase extends AssetService{
@@ -40,5 +42,10 @@ trait ImplBase extends AssetService{
     clusterSharding.entityRefFor(PortfolioEntity.typeKey, portfolioId.value)
 
 
+  protected def statisticShardingRef(portfolioId: String): EntityRef[StatisticSharding.Command] =
+    clusterSharding.entityRefFor(StatisticSharding.typeKey, portfolioId)
+
+  protected def statisticShardingRef(portfolioId: PortfolioId): EntityRef[StatisticSharding.Command] =
+    clusterSharding.entityRefFor(StatisticSharding.typeKey, portfolioId.value)
 }
 

@@ -8,7 +8,7 @@ object MapFormat {
     new Reads[Map[K, V]] {
       def reads(jv: JsValue): JsResult[Map[K, V]] =
         JsSuccess(jv.as[Map[String, V]].map{case (k, v) =>
-          jsonToObjectKey(k, v) -> v .asInstanceOf[V]
+          jsonToObjectKey(k, v) -> v.asInstanceOf[V]
         })
     }
   def write[K, V](objectToJsonKey: (K, V) => String)(implicit f: Format[V]): Writes[Map[K, V]] =

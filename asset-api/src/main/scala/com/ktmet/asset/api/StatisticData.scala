@@ -2,7 +2,8 @@ package com.ktmet.asset.api
 
 import com.ktmet.asset.api.PortfolioStatistic.StatisticType
 import com.ktmet.asset.api.PortfolioStatistic.StatisticType.StatisticType
-import play.api.libs.json.{Format, Json}
+import com.ktmet.asset.common.api.MapFormat
+import play.api.libs.json.{Format, Json, Reads, Writes}
 
 case class StatisticVersion(portfolioId: PortfolioId, timestamp: Long)
 object StatisticVersion{
@@ -24,36 +25,27 @@ object TimeSeriesStatistic {
   def empty: TimeSeriesStatistic = TimeSeriesStatistic(Seq.empty)
 }
 
-trait Statistic {
-  val statisticType: StatisticType
-}
-case class MddStatistic(mdd: BigDecimal, timeSeries: TimeSeriesStatistic) extends Statistic {
-  override val statisticType: StatisticType = StatisticType.Mdd
-}
+case class MddStatistic(mdd: BigDecimal, timeSeries: TimeSeriesStatistic)
 object MddStatistic {
   implicit val format:Format[MddStatistic] = Json.format
 }
-case class MonthProfitStatistic(profitTimeSeries: TimeSeriesStatistic) extends Statistic {
-  override val statisticType: StatisticType = StatisticType.MonthProfit
-}
+case class MonthProfitStatistic(profitTimeSeries: TimeSeriesStatistic)
 object MonthProfitStatistic {
   implicit val format:Format[MonthProfitStatistic] = Json.format
 }
-case class TotalAssetStatistic(values: Seq[DateValue]) extends Statistic {
-  override val statisticType: StatisticType = StatisticType.TotalAsset
-}
+case class TotalAssetStatistic(values: Seq[DateValue])
 object TotalAssetStatistic {
   implicit val format:Format[TotalAssetStatistic] = Json.format
 }
-case class CategoryAssetStatistic(values: Map[Category, Seq[DateValue]]) extends Statistic {
-  override val statisticType: StatisticType = StatisticType.CategoryAsset
-}
+case class CategoryAssetStatistic(values: Map[Category, Seq[DateValue]])
 object CategoryAssetStatistic {
+
+  implicit val mapReads: Reads[Map[Category, Seq[DateValue]]] = MapFormat.read((k, _) => Category(k))
+  implicit val mapWrites: Writes[Map[Category, Seq[DateValue]]] = MapFormat.write((k, _) => k.value)
+
   implicit val format:Format[CategoryAssetStatistic] = Json.format
 }
-case class CashAssetStatistic(values: Seq[DateValue]) extends Statistic {
-  override val statisticType: StatisticType = StatisticType.CategoryAsset
-}
+case class CashAssetStatistic(values: Seq[DateValue])
 object CashAssetStatistic {
   implicit val format:Format[CashAssetStatistic] = Json.format
 }

@@ -55,4 +55,12 @@ object Timestamp {
   }
 
   def afterDuration(duration: Duration) = Instant.now().plusSeconds(duration.toSeconds).getEpochSecond
+  def beforeDuration(duration: Duration) = Instant.now().minusSeconds(duration.toSeconds).getEpochSecond
+  def beforeDuration(timestamp: Long, duration: Duration) = Instant.ofEpochSecond(timestamp).minusSeconds(duration.toSeconds).getEpochSecond
+
+  def getDateStringBeforeDuration(date: String, duration: Duration) = {
+    val format = DateTimeFormat.forPattern("yyyyMMdd'T'HH:mm:ss")
+    val dateObj = format.parseDateTime(s"${date}T00:00:00").minus(duration.toMillis)
+    DateTimeFormat.forPattern("yyyyMMdd").print(dateObj)
+  }
 }

@@ -5,6 +5,7 @@ import akka.cluster.sharding.typed.scaladsl.Entity
 import akka.util.Timeout
 import com.asset.collector.api.CollectorService
 import com.ktmet.asset.api.AssetService
+import com.ktmet.asset.impl.actor.StatisticSharding
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
 import com.lightbend.lagom.scaladsl.akka.discovery.AkkaDiscoveryComponents
 import com.lightbend.lagom.scaladsl.devmode.LagomDevModeComponents
@@ -50,6 +51,12 @@ abstract class AssetApplication(context: LagomApplicationContext)
   clusterSharding.init(
     Entity(PortfolioEntity.typeKey) { entityContext =>
       PortfolioEntity(entityContext)
+    }
+  )
+
+  clusterSharding.init(
+    Entity(StatisticSharding.typeKey) { entityContext =>
+      StatisticSharding(entityContext.entityId, clusterSharding)
     }
   )
 

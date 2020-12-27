@@ -44,7 +44,7 @@ trait AssetService extends Service{
 
 
 
-  def test(portfolioId: String, stock: String): ServiceCall[NotUsed, StockMarketValueOverTimeMessage]
+  def test(portfolioId: String, version: Long): ServiceCall[NotUsed, PortfolioStatistic]
 
 
   override def descriptor: Descriptor = {
@@ -81,7 +81,7 @@ trait AssetService extends Service{
         restCall(Method.GET, "/portfolio/:portfolioId/status", getPortfolioStatus _),
         restCall(Method.GET, "/portfolio/:portfolioId/stock/info/:stock", getPortfolioStock _),
 
-        restCall(Method.GET, "/test/:portfolioId/:stock", test _)
+        restCall(Method.GET, "/test/:portfolioId/:version", test _)
 
       ).withAutoAcl(true)
       .withExceptionSerializer(new ClientExceptionSerializer(Environment.simple()))

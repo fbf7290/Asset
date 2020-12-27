@@ -1,19 +1,18 @@
 package com.ktmet.asset.impl
 
 import java.net.URLDecoder
-
 import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import akka.util.Timeout
 import com.asset.collector.api.{ClosePrice, CollectorService, Country, KrwUsd, Market, NowPrice, Stock}
-import com.ktmet.asset.api.{AssetCategory, AssetService, AssetSettings, AutoCompleteMessage, BuyTradeHistory, CashFlowHistory, CashHolding, CashHoldingMap, CashRatio, Category, GoalAssetRatio, HistorySet, Holdings, PortfolioId, PortfolioState, SellTradeHistory, StockHolding, StockHoldingMap, StockRatio, TradeHistory, UserId}
+import com.ktmet.asset.api.{AssetCategory, AssetService, AssetSettings, AutoCompleteMessage, BuyTradeHistory, CashFlowHistory, CashHolding, CashHoldingMap, CashRatio, Category, GoalAssetRatio, HistorySet, Holdings, PortfolioId, PortfolioState, PortfolioStatistic, SellTradeHistory, StockHolding, StockHoldingMap, StockRatio, TradeHistory, UserId}
 import com.lightbend.lagom.scaladsl.api.ServiceCall
 import play.api.libs.ws.WSClient
 
 import scala.concurrent.{ExecutionContext, Future}
 import akka.actor.typed.scaladsl.adapter._
-import com.ktmet.asset.impl.actor.{NowPriceActor, StockAutoCompleter}
+import com.ktmet.asset.impl.actor.{NowPriceActor, StatisticSharding, StockAutoCompleter}
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.serialization.{SerializationExtension, Serializers}
 import akka.stream.scaladsl.{Sink, Source}
@@ -24,7 +23,7 @@ import com.asset.collector.impl.repo.stock.{StockRepo, StockRepoAccessor}
 import com.ktmet.asset.api.message.PortfolioStatusMessage.StockStatus
 import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, BuyTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, DepositHistoryMessage, MarketValueMessage, NowPrices, PortfolioCreatedMessage, PortfolioMessage, PortfolioMessageConverter, PortfolioStatusMessage, PortfolioStockMessage, SellTradeHistoryMessage, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, StockMarketValueOverTimeMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage}
 import com.ktmet.asset.common.api.{ClientException, Timestamp}
-import com.ktmet.asset.impl.actor.StatisticSharding.{HoldAmount, DateValue, StockHoldAmountOverTime, StockValueOverTime}
+import com.ktmet.asset.impl.actor.StatisticSharding.{HoldAmount, StockHoldAmountOverTime, StockValueOverTime}
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
 import com.ktmet.asset.impl.entity.{PortfolioEntity, UserEntity}
 import com.lightbend.lagom.scaladsl.api.transport.{BadRequest, ResponseHeader}
@@ -434,122 +433,14 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
   }
 
 
-  override def test(portfolioId: String, stock: String): ServiceCall[NotUsed, StockMarketValueOverTimeMessage] =
-    ServerServiceCall{ (_, updatingGoalAssetRatioMessage) =>
-
-
-
-      def getStockHoldAmountOverTime(stockHolding: StockHolding): Option[StockHoldAmountOverTime] = {
-        val amountOverTime = stockHolding.tradeHistories
-          .groupBy(history => Timestamp.timestampToDateString(history.timestamp))
-          .map{ case (date, histories) =>
-            HoldAmount(date, histories.foldLeft(0){
-            (amount, history) => history match {
-              case _: BuyTradeHistory => amount + history.amount
-              case _: SellTradeHistory => amount - history.amount
-            }})}
-          .toList
-          .sortBy(_.date)
-          .scanLeft(HoldAmount.empty){ (result, holdAmount) =>
-            HoldAmount(holdAmount.date, result.amount + holdAmount.amount)
-          }
-          .drop(1)
-        NonEmptyList.fromList(amountOverTime).map(StockHoldAmountOverTime(stockHolding.stock, _))
-      }
-
-
-      def calculateStockMarketValue(stockStatusOverTime: StockHoldAmountOverTime): Future[Option[StockValueOverTime]] = {
-        var (holdAmount, nextHoldAmount, nextHoldAmounts) =
-          if(stockStatusOverTime.holdAmounts.size >= 2)
-            (stockStatusOverTime.holdAmounts.head, stockStatusOverTime.holdAmounts.tail.headOption, stockStatusOverTime.holdAmounts.tail.tail)
-          else (stockStatusOverTime.holdAmounts.head, None, List.empty)
-        var lastClosePrice: Option[ClosePrice] = None
-
-        def rangeMarketValue(closePrice: ClosePrice, fromDate: String, toDate: String): List[DateValue] =
-          Timestamp.rangeDateString(fromDate, toDate).map{ date =>
-                nextHoldAmount match {
-                  case Some(nextAmount) =>
-                    if(date < nextAmount.date) DateValue(date, closePrice.price * holdAmount.amount)
-                    else {
-                      holdAmount = nextAmount
-                      nextHoldAmounts.headOption.fold{
-                        nextHoldAmount = None
-                        nextHoldAmounts = List.empty
-                      }{ _ =>
-                        nextHoldAmount = nextHoldAmounts.headOption
-                        nextHoldAmounts = nextHoldAmounts.tail
-                      }
-                      DateValue(date, closePrice.price * nextAmount.amount)
-                    }
-                  case None => DateValue(date, closePrice.price * holdAmount.amount)
-                }
-            }
-
-//        collectorService.getClosePricesAfterDate1.invoke(GettingClosePricesAfterDate(stockStatusOverTime.stock
-//          , if(stockStatusOverTime.holdAmounts.head.date > AssetSettings.minStatisticDate) stockStatusOverTime.holdAmounts.head.date
-//          else AssetSettings.minStatisticDate)).map{
-//          prices =>
-//            Some(StockMarketValueOverTime(stockStatusOverTime.stock, prices.sliding(2).flatMap{
-//              prices =>
-//                prices.toList match {
-//                  case elem1 :: elem2 :: Nil =>
-//                    lastClosePrice = Some(elem2)
-//                    rangeMarketValue(elem1, elem1.date, elem2.date)
-//                  case elem :: Nil =>
-//                    rangeMarketValue(elem, elem.date, Timestamp.timestampToTomorrowDateString(Timestamp.now))
-//                  case _ => throw new ArrayIndexOutOfBoundsException
-//                }
-//            }.toList))
-//        }
-
-        collectorService.getClosePricesAfterDate.invoke(GettingClosePricesAfterDate(stockStatusOverTime.stock
-        , if(stockStatusOverTime.holdAmounts.head.date > AssetSettings.minStatisticDate) stockStatusOverTime.holdAmounts.head.date
-          else AssetSettings.minStatisticDate)).flatMap{ source =>
-          source
-            .sliding(2).map{ prices =>
-            var t = Timestamp.nowMilli
-            prices.toList match {
-              case elem1 :: elem2 :: Nil =>
-                lastClosePrice = Some(elem2)
-                rangeMarketValue(elem1, elem1.date, elem2.date)
-              case elem :: Nil => rangeMarketValue(elem, elem.date, Timestamp.timestampToTomorrowDateString(Timestamp.now))
-              case _ => throw new ArrayIndexOutOfBoundsException
-            }
-          }.runWith(Sink.seq)
-            .map{ marketValues =>
-              lastClosePrice match {
-                case Some(lastClosePrice) =>
-                  Some(StockValueOverTime(stockStatusOverTime.stock, marketValues.flatten
-                    ++ rangeMarketValue(lastClosePrice, lastClosePrice.date
-                    , Timestamp.timestampToTomorrowDateString(Timestamp.now))))
-                case None => Some(StockValueOverTime(stockStatusOverTime.stock, marketValues.flatten))
-              }
-            }.recover{ case e =>
-            println(e)
-            None
-          }
+  override def test(portfolioId: String, version: Long): ServiceCall[NotUsed, PortfolioStatistic] =
+    ServerServiceCall{ (_, _) =>
+      statisticShardingRef(portfolioId)
+        .ask[StatisticSharding.Response](reply => StatisticSharding.Get(version, reply))
+        .collect{
+          case e:StatisticSharding.StatisticResponse =>
+            (ResponseHeader.Ok.withStatus(200), e.portfolioStatistic.get)
         }
-      }
-      val stockObj = Json.parse(URLDecoder.decode(stock, "UTF-8")).as[Stock]
-      for{
-        holdAmountOverTime <- portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
-          PortfolioEntity.GetStock(stockObj, reply))
-          .collect{
-            case PortfolioEntity.StockResponse(stockHolding) =>
-              getStockHoldAmountOverTime(stockHolding)
-            case m: ClientException => throw m
-          }
-        result <- holdAmountOverTime match {
-          case Some(value) => calculateStockMarketValue(value)
-          case None => Future.successful(None)
-        }
-      } yield{
-        val r = result match {
-          case None => StockMarketValueOverTimeMessage(stockObj, Seq.empty)
-          case Some(value) => StockMarketValueOverTimeMessage(stockObj, value.value.map(i => MarketValueMessage(i.date, i.value)))
-        }
-        (ResponseHeader.Ok.withStatus(200), r)
-      }
 
 
       //      val serialization = SerializationExtension(system)
@@ -581,7 +472,6 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
       //      println(back)
       //
       //      println(back)
-
 
 //      Future.successful(ResponseHeader.Ok.withStatus(200), Done)
     }

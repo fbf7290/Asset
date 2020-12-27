@@ -135,7 +135,7 @@ object External {
       val format = new SimpleDateFormat("yyyyMMdd")
       YahooFinance.get("USDKRW=X", from, Interval.DAILY).getHistory.asScala.withFilter(_.getClose != null).map{
         stock =>
-          KrwUsd(format.format(stock.getDate.getTime()), stock.getClose)
+          KrwUsd(format.format(stock.getDate.getTime()), stock.getClose.setScale(2, BigDecimal.RoundingMode.DOWN))
       }
     }
 
