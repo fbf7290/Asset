@@ -8,7 +8,7 @@ import akka.stream.Materializer
 import akka.stream.scaladsl.Sink
 import akka.util.Timeout
 import cats.{Functor, Id}
-import com.ktmet.asset.api.{AssetSettings, BoughtStockCashHistory, BuyTradeHistory, CashAssetStatistic, CashFlowHistory, CashHolding, Category, CategoryAssetStatistic, DateValue, DepositHistory, PortfolioId, PortfolioState, PortfolioStatistic, SellTradeHistory, SoldStockCashHistory, StatisticVersion, StockHolding, TimeSeriesStatistic, TotalAssetStatistic, TradeHistory, WithdrawHistory}
+import com.ktmet.asset.api.{AssetSettings, BoughtStockCashHistory, BuyTradeHistory, CashAssetStatistic, CashFlowHistory, CashHolding, Category, CategoryAssetStatistic, DateValue, DepositHistory, MddStatistic, MonthProfitStatistic, PortfolioId, PortfolioState, PortfolioStatistic, SellTradeHistory, SoldStockCashHistory, StatisticVersion, StockHolding, TimeSeriesStatistic, TotalAssetStatistic, TradeHistory, WithdrawHistory}
 import com.ktmet.asset.impl.actor.StatisticSharding.Command
 import com.ktmet.asset.impl.entity.PortfolioEntity
 import com.ktmet.asset.impl.repo.statistic.{StatisticRepoAccessor, StatisticRepoTrait}
@@ -258,13 +258,51 @@ case class StatisticSharding(portfolioId: PortfolioId
       val minDate = stockValues.foldLeft("20990101"){ (r, values) =>
         values.headOption.fold(r){i => if(i.date<r) i.date else r}
       }
-      stockValues.filter(_.nonEmpty).map{ values =>
+      stockValues.withFilter(_.nonEmpty).map{ values =>
         Timestamp.rangeDateString(minDate, values.head.date)
           .map{ date => DateValue(date, 0)} ++ values
       }.transpose.map{ values =>
         DateValue(values.head.date, values.foldLeft(BigDecimal(0))((r, value) => (r + value.value).setScale(0, RoundingMode.HALF_DOWN)))
       }
     }
+
+    def calculateMddAndProfits(values: Seq[DateValue]): (BigDecimal, MonthProfitStatistic, MddStatistic) = {
+      var mdd: BigDecimal = 0
+      var latestHigh: BigDecimal = values.head.value
+      val yearProfits: ListBuffer[BigDecimal] = ListBuffer.empty
+      val monthProfits: ListBuffer[DateValue] = ListBuffer.empty
+      var (yearFirstValue, monthFirstValue, yesterdayValue) = (values.head, values.head, values.head)
+
+
+      val drawDowns = values.map{ value =>
+
+        if(yesterdayValue.date.substring(0, 4) != value.date.substring(0, 4)){
+          yearProfits.append((yesterdayValue.value - yearFirstValue.value)/yearFirstValue.value)
+          yearFirstValue = value
+        }
+        if(yesterdayValue.date.substring(4, 6) != value.date.substring(4, 6)){
+          monthProfits.append(DateValue(s"${yesterdayValue.date.substring(0, 6)}01",
+            (yesterdayValue.value - monthFirstValue.value)/monthFirstValue.value))
+          monthFirstValue = value
+        }
+        yesterdayValue = value
+
+        if(value.value >= latestHigh){
+          latestHigh = value.value
+          value.copy(value = BigDecimal(0))
+        }else{
+          val drawDown: BigDecimal = (((value.value - latestHigh)/latestHigh) * 100)
+                            .setScale(2, RoundingMode.HALF_DOWN)
+          if(drawDown > mdd) mdd = drawDown
+          value.copy(value = drawDown)
+        }
+      }
+
+      ((yearProfits.sum/yearProfits.size).setScale(2, RoundingMode.HALF_DOWN),
+        MonthProfitStatistic(monthProfits.toList),
+        MddStatistic(mdd, drawDowns))
+    }
+
 
     def calPortfolioStatistic(portfolioState: PortfolioState):Future[Either[Throwable, Option[PortfolioStatistic]]] = {
       def minDate: Option[String] = portfolioState.getHoldingCashes.map.values
@@ -299,10 +337,13 @@ case class StatisticSharding(portfolioId: PortfolioId
             cashValues = StatisticCalculatorUtils.mergeStockValues(List(Country.KOREA, Country.USA)
               .map(c => StatisticCalculatorUtils.getCashStatusOverTime(portfolioState.getHoldingCash(c)))
               .flatten
-              .map(r => StatisticCalculatorUtils.calculateCashValues(r, krwUsds)).map(_.value))
+              .map(r => StatisticCalculatorUtils.calculateCashValues(r, krwUsds).value))
             totalValue = StatisticCalculatorUtils.mergeStockValues(cashValues :: categoryStockValues.map(_._2).toList)
           } yield {
-            Some(PortfolioStatistic(TotalAssetStatistic(totalValue)
+            val (cagr, monthProfits, mdds) = calculateMddAndProfits(totalValue)
+            
+            Some(PortfolioStatistic(cagr, mdds, monthProfits
+              , TotalAssetStatistic(totalValue)
               , CategoryAssetStatistic(categoryStockValues.toMap)
               , CashAssetStatistic(cashValues)))
           }).value

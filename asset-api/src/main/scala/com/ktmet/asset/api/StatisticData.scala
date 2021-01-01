@@ -25,11 +25,11 @@ object TimeSeriesStatistic {
   def empty: TimeSeriesStatistic = TimeSeriesStatistic(Seq.empty)
 }
 
-case class MddStatistic(mdd: BigDecimal, timeSeries: TimeSeriesStatistic)
+case class MddStatistic(mdd: BigDecimal, values: Seq[DateValue])
 object MddStatistic {
   implicit val format:Format[MddStatistic] = Json.format
 }
-case class MonthProfitStatistic(profitTimeSeries: TimeSeriesStatistic)
+case class MonthProfitStatistic(values: Seq[DateValue])
 object MonthProfitStatistic {
   implicit val format:Format[MonthProfitStatistic] = Json.format
 }
@@ -50,14 +50,14 @@ object CashAssetStatistic {
   implicit val format:Format[CashAssetStatistic] = Json.format
 }
 
-//case class PortfolioStatistic(cagr: BigDecimal, mddStatistic: MddStatistic
-//                              , monthProfitStatistic: MonthProfitStatistic
-//                              , totalAssetStatistic: TotalAssetStatistic
-//                              , categoryAssetStatistic: CategoryAssetStatistic
-//                              , cashAssetStatistic: CashAssetStatistic)
-case class PortfolioStatistic(totalAssetStatistic: TotalAssetStatistic
+case class PortfolioStatistic(cagr: BigDecimal, mddStatistic: MddStatistic
+                              , monthProfitStatistic: MonthProfitStatistic
+                              , totalAssetStatistic: TotalAssetStatistic
                               , categoryAssetStatistic: CategoryAssetStatistic
                               , cashAssetStatistic: CashAssetStatistic)
+//case class PortfolioStatistic(totalAssetStatistic: TotalAssetStatistic
+//                              , categoryAssetStatistic: CategoryAssetStatistic
+//                              , cashAssetStatistic: CashAssetStatistic)
 object PortfolioStatistic {
   implicit val format:Format[PortfolioStatistic] = Json.format
 
