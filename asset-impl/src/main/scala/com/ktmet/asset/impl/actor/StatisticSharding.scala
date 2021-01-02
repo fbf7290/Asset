@@ -282,7 +282,7 @@ case class StatisticSharding(portfolioId: PortfolioId
         }
         if(yesterdayValue.date.substring(4, 6) != value.date.substring(4, 6)){
           monthProfits.append(DateValue(s"${yesterdayValue.date.substring(0, 6)}01",
-            (yesterdayValue.value - monthFirstValue.value)/monthFirstValue.value))
+            ((yesterdayValue.value - monthFirstValue.value) * 100/monthFirstValue.value).setScale(2, RoundingMode.HALF_DOWN)))
           monthFirstValue = value
         }
         yesterdayValue = value
@@ -293,12 +293,12 @@ case class StatisticSharding(portfolioId: PortfolioId
         }else{
           val drawDown: BigDecimal = (((value.value - latestHigh)/latestHigh) * 100)
                             .setScale(2, RoundingMode.HALF_DOWN)
-          if(drawDown > mdd) mdd = drawDown
+          if(drawDown < mdd) mdd = drawDown
           value.copy(value = drawDown)
         }
       }
 
-      ((yearProfits.sum/yearProfits.size).setScale(2, RoundingMode.HALF_DOWN),
+      ((yearProfits.sum * 100/yearProfits.size).setScale(2, RoundingMode.HALF_DOWN),
         MonthProfitStatistic(monthProfits.toList),
         MddStatistic(mdd, drawDowns))
     }
