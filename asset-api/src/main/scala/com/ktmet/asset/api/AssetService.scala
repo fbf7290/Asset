@@ -2,7 +2,7 @@ package com.ktmet.asset.api
 
 import akka.{Done, NotUsed}
 import com.asset.collector.api.{KrwUsd, NowPrice, Stock}
-import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, NowPrices, PortfolioCreatedMessage, PortfolioMessage, PortfolioStatusMessage, PortfolioStockMessage, RefreshingToken, SocialLoggingIn, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, StockMarketValueOverTimeMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage, UserMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, NowPrices, PortfolioCreatedMessage, PortfolioMessage, PortfolioStatisticMessage, PortfolioStatusMessage, PortfolioStockMessage, RefreshingToken, SocialLoggingIn, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage, UserMessage}
 import com.ktmet.asset.common.api.ClientExceptionSerializer
 import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Descriptor, Service, ServiceAcl, ServiceCall}
@@ -42,7 +42,7 @@ trait AssetService extends Service{
   def getPortfolioStatus(portfolioId: String): ServiceCall[NotUsed, PortfolioStatusMessage]
   def getPortfolioStock(portfolioId: String, stock: String): ServiceCall[NotUsed, PortfolioStockMessage]
 
-
+  def getPortfolioStatistic(portfolioId: String, timestmap: Long): ServiceCall[NotUsed, PortfolioStatisticMessage]
 
   def test(portfolioId: String, version: Long): ServiceCall[NotUsed, PortfolioStatistic]
 
@@ -81,7 +81,9 @@ trait AssetService extends Service{
         restCall(Method.GET, "/portfolio/:portfolioId/status", getPortfolioStatus _),
         restCall(Method.GET, "/portfolio/:portfolioId/stock/info/:stock", getPortfolioStock _),
 
-        restCall(Method.GET, "/test/:portfolioId/:version", test _)
+        restCall(Method.GET, "/portfolio/:portfolioId/statistic/:timestamp", getPortfolioStatistic _),
+
+        restCall(Method.GET, "/test/:portfolioId/:timestamp", test _)
 
       ).withAutoAcl(true)
       .withExceptionSerializer(new ClientExceptionSerializer(Environment.simple()))

@@ -55,9 +55,6 @@ case class PortfolioStatistic(cagr: BigDecimal, mddStatistic: MddStatistic
                               , totalAssetStatistic: TotalAssetStatistic
                               , categoryAssetStatistic: CategoryAssetStatistic
                               , cashAssetStatistic: CashAssetStatistic)
-//case class PortfolioStatistic(totalAssetStatistic: TotalAssetStatistic
-//                              , categoryAssetStatistic: CategoryAssetStatistic
-//                              , cashAssetStatistic: CashAssetStatistic)
 object PortfolioStatistic {
   implicit val format:Format[PortfolioStatistic] = Json.format
 

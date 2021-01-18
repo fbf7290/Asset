@@ -45,6 +45,7 @@ object StatisticSharding {
   sealed trait Response
   case class FailureResponse(exception: Throwable) extends Response
   case class StatisticResponse(portfolioVersion: Long, portfolioStatistic: Option[PortfolioStatistic]) extends Response
+  case object InvalidPortfolioVersion extends ClientException(400, "InvalidPortfolioVersion", "InvalidPortfolioVersion") with Response
 
   def apply(portfolioId: String, clusterSharding: ClusterSharding)
                  (implicit collectorService: CollectorService
@@ -397,7 +398,7 @@ case class StatisticSharding(portfolioId: PortfolioId
       case Get(version, replyTo) =>
         context.pipeToSelf{
           if(portfolioVersion == version) Future.successful(ReplyStatistic(replyTo))
-          else if(portfolioVersion > version) Future.successful(ReplyFailure(new IllegalArgumentException, replyTo))
+          else if(portfolioVersion > version) Future.successful(ReplyFailure(InvalidPortfolioVersion, replyTo))
           else {
             for{
               portfolioState <- portfolioEntityRef.ask[PortfolioEntity.Response](reply => PortfolioEntity.GetPortfolio(reply))
@@ -412,7 +413,7 @@ case class StatisticSharding(portfolioId: PortfolioId
                     case Left(exception) => ReplyFailure(exception, replyTo)
                   }
                 }
-              } else Future.successful(ReplyFailure(new IllegalArgumentException, replyTo))
+              } else Future.successful(ReplyFailure(InvalidPortfolioVersion, replyTo))
             } yield{
               result
             }
