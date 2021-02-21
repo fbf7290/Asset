@@ -52,7 +52,7 @@ object StockAutoCompleter {
 
         def ing(koreaStocks: RadixTree[String, Stock], usaStocks:RadixTree[String, Stock]):Behavior[Command] = Behaviors.receiveMessage{
           case Search(prefix, replyTo) =>
-            replyTo ! SearchResponse(koreaStocks.filterPrefix(prefix.toUpperCase).values, usaStocks.filterPrefix(prefix.toUpperCase).values)
+            replyTo ! SearchResponse(koreaStocks.filterPrefix(prefix.toUpperCase).values.take(100), usaStocks.filterPrefix(prefix.toUpperCase).values.take(100))
             Behaviors.same
           case _ => Behaviors.same
         }

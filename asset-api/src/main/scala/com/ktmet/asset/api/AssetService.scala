@@ -2,7 +2,7 @@ package com.ktmet.asset.api
 
 import akka.{Done, NotUsed}
 import com.asset.collector.api.{KrwUsd, NowPrice, Stock}
-import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, NowPrices, PortfolioCreatedMessage, PortfolioMessage, PortfolioStatisticMessage, PortfolioStatusMessage, PortfolioStockMessage, RefreshingToken, SocialLoggingIn, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage, UserMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, AllTradeHistoriesDeletedMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingAllTradeHistoriesMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, LoginMessage, NowPrices, PortfolioCreatedMessage, PortfolioMessage, PortfolioStatisticMessage, PortfolioStatusMessage, PortfolioStockMessage, RefreshingToken, SocialLoggingIn, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TokenMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage, UserMessage}
 import com.ktmet.asset.common.api.ClientExceptionSerializer
 import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Descriptor, Service, ServiceAcl, ServiceCall}
@@ -34,6 +34,7 @@ trait AssetService extends Service{
   def deleteStock(portfolioId: String): ServiceCall[DeletingStockMessage, StockDeletedMessage]
   def addTradeHistory(portfolioId: String): ServiceCall[AddingTradeHistoryMessage, TradeHistoryAddedMessage]
   def deleteTradeHistory(portfolioId: String): ServiceCall[DeletingTradeHistoryMessage, TradeHistoryDeletedMessage]
+  def deleteAllTradeHistories(portfolioId: String): ServiceCall[DeletingAllTradeHistoriesMessage, AllTradeHistoriesDeletedMessage]
   def updateTradeHistory(portfolioId: String): ServiceCall[UpdatingTradeHistoryMessage, TradeHistoryUpdatedMessage]
   def addCashFlowHistory(portfolioId: String): ServiceCall[CashFlowHistoryMessage, CashFlowHistoryAddedMessage]
   def deleteCashFlowHistory(portfolioId: String): ServiceCall[DeletingCashFlowHistory, CashFlowHistoryDeletedMessage]
@@ -42,7 +43,7 @@ trait AssetService extends Service{
   def getPortfolioStatus(portfolioId: String): ServiceCall[NotUsed, PortfolioStatusMessage]
   def getPortfolioStock(portfolioId: String, stock: String): ServiceCall[NotUsed, PortfolioStockMessage]
 
-  def getPortfolioStatistic(portfolioId: String, timestmap: Long): ServiceCall[NotUsed, PortfolioStatisticMessage]
+  def getPortfolioStatistic(portfolioId: String, timestamp: Long): ServiceCall[NotUsed, PortfolioStatisticMessage]
 
   def test(portfolioId: String, version: Long): ServiceCall[NotUsed, PortfolioStatistic]
 
@@ -71,12 +72,13 @@ trait AssetService extends Service{
         restCall(Method.POST, "/portfolio/:portfolioId/goal", updateGoalAssetRatio _),
         restCall(Method.POST, "/portfolio/:portfolioId/stock", addStock _),
         restCall(Method.DELETE, "/portfolio/:portfolioId/stock", deleteStock _),
-        restCall(Method.PUT, "/portfolio/:portfolioId/stock/history", addTradeHistory _),
+        restCall(Method.POST, "/portfolio/:portfolioId/stock/history", addTradeHistory _),
         restCall(Method.DELETE, "/portfolio/:portfolioId/stock/history", deleteTradeHistory _),
-        restCall(Method.POST, "/portfolio/:portfolioId/stock/history", updateTradeHistory _),
-        restCall(Method.PUT, "/portfolio/:portfolioId/cash/history", addCashFlowHistory _),
+        restCall(Method.DELETE, "/portfolio/:portfolioId/stock/history/all", deleteAllTradeHistories _),
+        restCall(Method.PUT, "/portfolio/:portfolioId/stock/history", updateTradeHistory _),
+        restCall(Method.POST, "/portfolio/:portfolioId/cash/history", addCashFlowHistory _),
         restCall(Method.DELETE, "/portfolio/:portfolioId/cash/history", deleteCashFlowHistory _),
-        restCall(Method.POST, "/portfolio/:portfolioId/cash/history", updateCashFlowHistory _),
+        restCall(Method.PUT, "/portfolio/:portfolioId/cash/history", updateCashFlowHistory _),
         restCall(Method.POST, "/portfolio/:portfolioId/stock/category", updateStockCategory _),
         restCall(Method.GET, "/portfolio/:portfolioId/status", getPortfolioStatus _),
         restCall(Method.GET, "/portfolio/:portfolioId/stock/info/:stock", getPortfolioStock _),

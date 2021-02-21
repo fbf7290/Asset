@@ -129,6 +129,16 @@ object TradeHistoryDeletedMessage {
   implicit val format:Format[TradeHistoryDeletedMessage] = Json.format
 }
 
+case class DeletingAllTradeHistoriesMessage(stock: Stock)
+object DeletingAllTradeHistoriesMessage{
+  implicit val format:Format[DeletingAllTradeHistoriesMessage] = Json.format
+}
+case class AllTradeHistoriesDeletedMessage(stockHolding: StockHolding
+                                          , cashHolding: CashHolding, updateTimestamp: Long)
+object AllTradeHistoriesDeletedMessage{
+  implicit val format:Format[AllTradeHistoriesDeletedMessage] = Json.format
+}
+
 case class UpdatingTradeHistoryMessage(stock: Stock
                                        , tradeHistoryId: String
                                        , history: TradeHistoryMessage)

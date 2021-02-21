@@ -21,7 +21,7 @@ import cats.{Functor, Id}
 import com.asset.collector.api.Country.Country
 import com.asset.collector.impl.repo.stock.{StockRepo, StockRepoAccessor}
 import com.ktmet.asset.api.message.PortfolioStatusMessage.StockStatus
-import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, BuyTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, DepositHistoryMessage, NowPrices, PortfolioCreatedMessage, PortfolioMessage, PortfolioMessageConverter, PortfolioStatisticMessage, PortfolioStatusMessage, PortfolioStockMessage, SellTradeHistoryMessage, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage}
+import com.ktmet.asset.api.message.{AddingCategoryMessage, AddingStockMessage, AddingTradeHistoryMessage, AllTradeHistoriesDeletedMessage, BuyTradeHistoryMessage, CashFlowHistoryAddedMessage, CashFlowHistoryDeletedMessage, CashFlowHistoryMessage, CashFlowHistoryUpdatedMessage, CreatingPortfolioMessage, DeletingAllTradeHistoriesMessage, DeletingCashFlowHistory, DeletingStockMessage, DeletingTradeHistoryMessage, DepositHistoryMessage, NowPrices, PortfolioCreatedMessage, PortfolioMessage, PortfolioMessageConverter, PortfolioStatisticMessage, PortfolioStatusMessage, PortfolioStockMessage, SellTradeHistoryMessage, StockAddedMessage, StockCategoryUpdatedMessage, StockDeletedMessage, TimestampMessage, TradeHistoryAddedMessage, TradeHistoryDeletedMessage, TradeHistoryUpdatedMessage, UpdatingCashFlowHistory, UpdatingGoalAssetRatioMessage, UpdatingStockCategory, UpdatingTradeHistoryMessage}
 import com.ktmet.asset.common.api.{ClientException, Timestamp}
 import com.ktmet.asset.impl.actor.StatisticSharding.{HoldAmount, InvalidPortfolioVersion, StockHoldAmountOverTime, StockValueOverTime}
 import com.ktmet.asset.impl.actor.StockAutoCompleter.SearchResponse
@@ -229,6 +229,18 @@ class AssetServiceImpl(protected val clusterSharding: ClusterSharding,
         .collect{
           case PortfolioEntity.TradeHistoryDeletedResponse(stockHolding, cashHolding, updateTimestamp) =>
             (ResponseHeader.Ok.withStatus(200), TradeHistoryDeletedMessage(stockHolding, cashHolding, updateTimestamp))
+          case m: ClientException => throw m
+        }
+    }
+  }
+
+  override def deleteAllTradeHistories(portfolioId: String): ServiceCall[DeletingAllTradeHistoriesMessage, AllTradeHistoriesDeletedMessage] = authenticate { userId =>
+    ServerServiceCall{ (_, deletingAllTradeHistoriesMessage) =>
+      portfolioEntityRef(portfolioId).ask[PortfolioEntity.Response](reply =>
+        PortfolioEntity.DeleteAllTradeHistories(userId, deletingAllTradeHistoriesMessage.stock, reply))
+        .collect{
+          case PortfolioEntity.AllTradeHistoriesDeletedResponse(stockHolding, cashHolding, updateTimestamp) =>
+            (ResponseHeader.Ok.withStatus(200), AllTradeHistoriesDeletedMessage(stockHolding, cashHolding, updateTimestamp))
           case m: ClientException => throw m
         }
     }

@@ -85,7 +85,7 @@ case class StockRepo(session: CassandraSession)(implicit val  ec: ExecutionConte
     session.executeCreateTable(s"create table if not exists ${country}_now_price (ignored TEXT, code TEXT, price DECIMAL, change_percent DECIMAL, PRIMARY KEY(ignored, code))")
 
   override def selectNowPrices(country: Country): Future[Seq[NowPrice]] =
-    session.selectAll(s"select code, price from ${country}_now_price where ignored='1'")
+    session.selectAll(s"select code, price, change_percent from ${country}_now_price where ignored='1'")
     .map(rows => rows.map(row => NowPrice(row.getString("code"), row.getDecimal("price"), row.getDecimal("change_percent"))))
 
   override def insertBatchNowPrice(country: Country, prices: Seq[NowPrice]): Future[Done] =  {

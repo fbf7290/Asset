@@ -137,17 +137,21 @@ object BatchActor {
             case CollectUsaStocks(replyTo) =>
               context.pipeToSelf{
                 for{
-                  dumbStocks <- Future.sequence(Set(External.requestUsaMarketStockList(Market.NASDAQ),
+                  nowStocks <- Future.sequence(List(External.requestUsaMarketStockList(Market.NASDAQ),
                     External.requestUsaMarketStockList(Market.NYSE),
                     External.requestUsaMarketStockList(Market.AMEX),
-                    External.requestUsaEtfStockList))
-                  marketMap = dumbStocks.foldLeft(mutable.Map.empty[String , Market]){(map, stocks) =>
-                    stocks.foreach(stock=>   map += (stock.code->stock.market))
-                    map
-                  }
-                  finnHubStocks <- External.requestUsaMarketStockListByFinnHub
-                  nowStocks = finnHubStocks.withFilter(stock => marketMap.contains(stock.code))
-                    .map(stock=> stock.setMarket(marketMap.get(stock.code).get))
+                    External.requestUsaEtfStockList)).map(_.flatten)
+//                  dumbStocks <- Future.sequence(Set(External.requestUsaMarketStockList(Market.NASDAQ),
+//                    External.requestUsaMarketStockList(Market.NYSE),
+//                    External.requestUsaMarketStockList(Market.AMEX),
+//                    External.requestUsaEtfStockList))
+//                  marketMap = dumbStocks.foldLeft(mutable.Map.empty[String , Market]){(map, stocks) =>
+//                    stocks.foreach(stock=>   map += (stock.code->stock.market))
+//                    map
+//                  }
+//                  finnHubStocks <- External.requestUsaMarketStockListByFinnHub
+//                  nowStocks = finnHubStocks.withFilter(stock => marketMap.contains(stock.code))
+//                    .map(stock=> stock.setMarket(marketMap.get(stock.code).get))
                   _ <- refreshStockList(Country.USA, nowStocks.toSet).run(stockDb)
                   failList = ListBuffer.empty[String]
                   _ <- Source(nowStocks.toList).zipWithIndex.mapAsync(8) { case (stock, index) =>

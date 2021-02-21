@@ -262,6 +262,7 @@ case class StockHolding(stock: Stock, amount: Int
         Left(new Exception("invalid trade history"))
     }
   }
+  def removeAllHistories: StockHolding = StockHolding.empty(stock)
   def addHistories(histories: TradeHistory *): Either[Throwable, StockHolding] = {
     val res = copy(tradeHistories = histories.foldLeft(this.tradeHistories){
       (newHistories, history) => addHistory(newHistories, history)
@@ -300,6 +301,8 @@ case class StockHoldingMap(map: Map[Stock, StockHolding]){
     copy(map + (stock -> map.get(stock).get.addHistories(histories: _*).fold(throw _, i => i)))
   def removeHistories(stock: Stock, histories: TradeHistory *): StockHoldingMap =
     copy(map + (stock -> map.get(stock).get.removeHistories(histories: _*).fold(throw _, i => i)))
+  def removeAllHistories(stock: Stock): StockHoldingMap =
+    copy(map + (stock -> map.get(stock).get.removeAllHistories))
   def updateHistory(stock: Stock, lastHistory: TradeHistory, newHistory: TradeHistory): StockHoldingMap =
     copy(map + (stock -> map.get(stock).get.updateHistory(lastHistory, newHistory).fold(throw _, i => i)))
   def addStockHolding(stockHolding: StockHolding): StockHoldingMap =
@@ -572,6 +575,8 @@ case class Holdings(stockHoldingMap: StockHoldingMap, cashHoldingMap: CashHoldin
     copy(cashHoldingMap = cashHoldingMap.updateHistory(country, lastHistory, newHistory))
   def removeStockHistories(stock: Stock, histories: TradeHistory *): Holdings =
     copy(stockHoldingMap = stockHoldingMap.removeHistories(stock, histories: _*))
+  def removeStockAllHistories(stock: Stock): Holdings =
+    copy(stockHoldingMap = stockHoldingMap.removeAllHistories(stock))
   def addStockHistories(stock: Stock, histories: TradeHistory *): Holdings =
     copy(stockHoldingMap = stockHoldingMap.addHistories(stock, histories: _*))
   def updateStockHistory(stock: Stock, lastHistory: TradeHistory, newHistory: TradeHistory): Holdings =
@@ -638,6 +643,7 @@ case class PortfolioState(portfolioId: PortfolioId, name: String, updateTimestam
   def updateCashHistory(country: Country, lastCashFlowHistory: CashFlowHistory, newCashFlowHistory: CashFlowHistory): PortfolioState = copy(holdings = holdings.updateCashHistory(country, lastCashFlowHistory, newCashFlowHistory))
   def containStock(stock: Stock): Boolean = holdings.containStock(stock)
   def removeTradeHistories(stock: Stock, tradeHistories: TradeHistory *): PortfolioState = copy(holdings = holdings.removeStockHistories(stock, tradeHistories: _*))
+  def removeAllTradeHistories(stock: Stock): PortfolioState = copy(holdings = holdings.removeStockAllHistories(stock))
   def addTradeHistories(stock: Stock, tradeHistories: TradeHistory *): PortfolioState = copy(holdings = holdings.addStockHistories(stock, tradeHistories: _*))
   def updateTradeHistory(stock: Stock, lastTradeHistory: TradeHistory, newTradeHistory: TradeHistory): PortfolioState = copy(holdings = holdings.updateStockHistory(stock, lastTradeHistory, newTradeHistory))
   def addStockHolding(stockHolding: StockHolding): PortfolioState = copy(holdings = holdings.addStockHolding(stockHolding))

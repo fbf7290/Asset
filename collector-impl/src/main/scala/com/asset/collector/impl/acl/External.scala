@@ -57,19 +57,36 @@ object External {
       throw e}
   }
 
+
   def requestUsaMarketStockList(market:Market)(implicit wsClient: WSClient, ec: ExecutionContext):Future[Seq[Stock]] = {
-    var stockList = ListBuffer.empty[Stock]
-    val marketParam = market match {
-      case Market.NASDAQ => "NASDAQ"
-      case Market.NYSE => "NYSE"
-      case Market.AMEX => "AMEX"
+    val marketParam: List[String] = market match {
+      case Market.NASDAQ => List("XNCM", "XNGS", "XNMS")
+      case Market.NYSE => List("XNYS")
+      case Market.AMEX => List("XASE")
     }
-    wsClient.url(s"https://dumbstockapi.com/stock?exchanges=${marketParam}").get.map{
-      response =>
-        Json.parse(response.body).as[Seq[DumbStock]].foreach(dumbStock => stockList += Stock(Country.USA, market, dumbStock.name, dumbStock.ticker.replace("^", "-P").replace(".", "-")))
-        stockList.toSeq
-    }
+    Future.sequence(marketParam.map{ param =>
+      wsClient.url(s"https://finnhub.io/api/v1/stock/symbol?exchange=US&mic=${param}&token=btq8hef48v6t9hdd4bn0").get().map{
+        response =>
+          Json.parse(response.body).as[Seq[FinnHubStock]].withFilter(!_.`type`.equals("ETP"))
+          .map(stock => Stock(Country.USA, market, stock.description, stock.symbol))
+      }
+    }).map(_.flatten)
   }
+
+//
+//  def requestUsaMarketStockList(market:Market)(implicit wsClient: WSClient, ec: ExecutionContext):Future[Seq[Stock]] = {
+//    var stockList = ListBuffer.empty[Stock]
+//    val marketParam = market match {
+//      case Market.NASDAQ => "NASDAQ"
+//      case Market.NYSE => "NYSE"
+//      case Market.AMEX => "AMEX"
+//    }
+//    wsClient.url(s"https://dumbstockapi.com/stock?exchanges=${marketParam}").get.map{
+//      response =>
+//        Json.parse(response.body).as[Seq[DumbStock]].foreach(dumbStock => stockList += Stock(Country.USA, market, dumbStock.name, dumbStock.ticker.replace("^", "-P").replace(".", "-")))
+//        stockList.toSeq
+//    }
+//  }
 
   def requestUsaMarketStockListByFinnHub(implicit wsClient: WSClient, ec: ExecutionContext):Future[Seq[Stock]] = {
     var stockList = ListBuffer.empty[Stock]
@@ -86,7 +103,7 @@ object External {
     wsClient.url("https://finnhub.io/api/v1/stock/symbol?exchange=US&token=btq8hef48v6t9hdd4bn0").get().map{
       response =>
         Json.parse(response.body).as[Seq[FinnHubStock]].foreach(stock =>
-          if(stock.`type`.equals("ETF")) stockList += Stock(Country.USA, Market.ETF, stock.description, stock.symbol))
+          if(stock.`type`.equals("ETP")) stockList += Stock(Country.USA, Market.ETF, stock.description, stock.symbol))
         stockList.toSeq
     }
   }
@@ -125,7 +142,9 @@ object External {
     Future{
       println(stocks.size)
       val prices = YahooFinance.get(stocks.map(stock =>stock.code).toArray)
-      prices.asScala.values.map(stock => NowPrice(stock.getSymbol, stock.getQuote.getPrice, stock.getQuote.getChangeInPercent)).toSeq
+      prices.asScala.values
+        .withFilter(stock => stock.getQuote.getPrice != null && stock.getQuote.getChangeInPercent != null)
+        .map(stock => NowPrice(stock.getSymbol, stock.getQuote.getPrice, stock.getQuote.getChangeInPercent)).toSeq
     }
 
   def requestKrwUsds(year:Int=100)(implicit ec: ExecutionContext):Future[Seq[KrwUsd]] =
@@ -146,3 +165,4 @@ object External {
       KrwUsd(format.format(Date.from(Instant.now)), data.getQuote.getPrice)
     }
 }
+

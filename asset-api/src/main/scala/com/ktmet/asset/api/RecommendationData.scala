@@ -12,13 +12,6 @@ object RecommendationStock{
   implicit val format:Format[RecommendationStock] = Json.format
 }
 
-
-case class Category(value: String) extends AnyVal
-object Category {
-  implicit val format:Format[Category] = Json.valueFormat
-  val CashCategory = Category("Cash")
-}
-
 case class StockRatioChange(stock:Stock, nowRatio: Int, changeRatio: Int, goalRatio: Int)
 object StockRatioChange {
   implicit val format:Format[StockRatioChange] = Json.format
@@ -32,13 +25,13 @@ case class RatioChanges(stockRatioChanges: Map[Category, StockRatioChange]
                         , cashRatioChanges: Map[Category, CashRatioChange])
 
 object RatioChanges{
-  implicit val stockRatioChangesReads: Reads[Map[Category, List[StockRatioChange]]] =
+  implicit val stockRatioChangesReads: Reads[Map[Category, StockRatioChange]] =
     MapFormat.read((k, _) => Category(k))
-  implicit val stockRatioChangesWrites: Writes[Map[Category, List[StockRatioChange]]] =
+  implicit val stockRatioChangesWrites: Writes[Map[Category, StockRatioChange]] =
     MapFormat.write((k, _) => k.value)
-  implicit val cashRatioChangesReads: Reads[Map[Category, List[CashRatioChange]]] =
+  implicit val cashRatioChangesReads: Reads[Map[Category, CashRatioChange]] =
     MapFormat.read((k, _) => Category(k))
-  implicit val cashRatioChangesWrites: Writes[Map[Category, List[CashRatioChange]]] =
+  implicit val cashRatioChangesWrites: Writes[Map[Category, CashRatioChange]] =
     MapFormat.write((k, _) => k.value)
 
   implicit val format:Format[RatioChanges] = Json.format

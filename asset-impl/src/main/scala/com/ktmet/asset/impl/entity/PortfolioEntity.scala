@@ -30,6 +30,7 @@ object PortfolioEntity {
   case class AddStock(owner: UserId, stock: Stock, category: Category, historySets: Seq[HistorySet], replyTo: ActorRef[Response]) extends Command
   case class AddTradeHistory(owner: UserId, historySet: HistorySet, replyTo: ActorRef[Response]) extends Command
   case class DeleteTradeHistory(owner: UserId, stock: Stock, tradeHistoryId: String, replyTo: ActorRef[Response]) extends Command
+  case class DeleteAllTradeHistories(owner: UserId, stock: Stock, replyTo: ActorRef[Response]) extends Command
   case class UpdateTradeHistory(owner: UserId, historySet: HistorySet, replyTo: ActorRef[Response]) extends Command
   case class DeleteStock(owner: UserId, stock: Stock, category: Category, replyTo: ActorRef[Response]) extends Command
   case class UpdateStockCategory(owner: UserId, stock: Stock, lastCategory: Category, newCategory: Category, replyTo: ActorRef[Response]) extends Command
@@ -47,6 +48,7 @@ object PortfolioEntity {
   case class PortfolioResponse(portfolioState: PortfolioState) extends Response
   case class TradeHistoryAddedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class TradeHistoryDeletedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
+  case class AllTradeHistoriesDeletedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class TradeHistoryUpdatedResponse(stockHolding: StockHolding, cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class CashFlowHistoryAddedResponse(cashHolding: CashHolding, updateTimestamp: Long) extends Response
   case class CashFlowHistoryDeletedResponse(cashHolding: CashHolding, updateTimestamp: Long) extends Response
@@ -116,6 +118,10 @@ object PortfolioEntity {
   object TradeHistoryDeleted{
     implicit val format:Format[TradeHistoryDeleted] = Json.format
   }
+  case class AllTradeHistoriesDeleted(stock: Stock, updateTimestamp: Long) extends Event
+  object AllTradeHistoriesDeleted{
+    implicit val format:Format[AllTradeHistoriesDeleted] = Json.format
+  }
   case class TradeHistoryUpdated(lastHistorySet: HistorySet, newHistorySet: HistorySet, updateTimestamp: Long) extends Event
   object TradeHistoryUpdated{
     implicit val format:Format[TradeHistoryUpdated] = Json.format
@@ -140,7 +146,7 @@ object PortfolioEntity {
         emptyState = PortfolioEntity.empty,
         commandHandler = (user, cmd) => user.applyCommand(cmd),
         eventHandler = (user, evt) => user.applyEvent(evt)
-      ).withRetention(RetentionCriteria.snapshotEvery(numberOfEvents = 50, keepNSnapshots = 2))
+      ).withRetention(RetentionCriteria.snapshotEvery(numberOfEvents = 20, keepNSnapshots = 2))
   }
 
   def apply(entityContext: EntityContext[Command]): Behavior[Command] =
@@ -160,6 +166,7 @@ object PortfolioEntity {
     JsonSerializer[StockAdded],
     JsonSerializer[TradeHistoryAdded],
     JsonSerializer[TradeHistoryDeleted],
+    JsonSerializer[AllTradeHistoriesDeleted],
     JsonSerializer[TradeHistoryUpdated],
     JsonSerializer[StockDeleted],
     JsonSerializer[StockCategoryUpdated],
@@ -211,6 +218,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     case AddStock(owner, stock, category, historySets, replyTo) => onAddStock(owner, stock, category, historySets, replyTo)
     case AddTradeHistory(owner, historySet, replyTo) => onAddTradeHistory(owner, historySet, replyTo)
     case DeleteTradeHistory(owner, stock, tradeHistoryId, replyTo) => onDeleteTradeHistory(owner, stock, tradeHistoryId, replyTo)
+    case DeleteAllTradeHistories(owner, stock, replyTo) => onDeleteAllTradeHistory(owner, stock, replyTo)
     case UpdateTradeHistory(owner, historySet, replyTo) => onUpdateTradeHistory(owner, historySet, replyTo)
     case DeleteStock(owner, stock, category, replyTo) => onDeleteStock(owner, stock, category, replyTo)
     case UpdateStockCategory(owner, stock, lastCategory, newCategory, replyTo) => onUpdateStockCategory(owner, stock, lastCategory, newCategory, replyTo)
@@ -374,6 +382,22 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
         case None => Effect.reply(replyTo)(NotFoundStockException)
       }
     }
+  def onDeleteAllTradeHistory(owner: UserId, stock: Stock, replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
+    funcWithOwner(owner, replyTo){ state =>
+      state.getHoldingStock(stock) match {
+        case Some(holding) =>
+          state.getHoldingCash(stock.country)
+            .removeHistories(holding.tradeHistories.map(h=>CashFlowHistory(h)): _*) match {
+              case Right(cashHolding) =>
+                Effect.persist(AllTradeHistoriesDeleted(stock, Timestamp.now))
+                  .thenReply(replyTo)(e => AllTradeHistoriesDeletedResponse(
+                    e.state.get.getHoldingStock(stock).get, cashHolding, e.state.get.updateTimestamp))
+              case _ => Effect.reply(replyTo)(InvalidCashException)
+            }
+        case None => Effect.reply(replyTo)(NotFoundStockException)
+      }
+    }
+
   private def onUpdateTradeHistory(owner: UserId, historySet: HistorySet, replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithOwner(owner, replyTo){ state =>
       state.getHoldingStock(historySet.tradeHistory.stock) match {
@@ -434,7 +458,6 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
   private def onGetTimestamp(replyTo: ActorRef[Response]): ReplyEffect[Event, PortfolioEntity] =
     funcWithState(replyTo)(state => Effect.reply(replyTo)(TimestampResponse(state.updateTimestamp)))
 
-
   def applyEvent(evt: Event): PortfolioEntity = evt match {
     case PortfolioCreated(portfolioId, owner, name, updateTimestamp) => onPortfolioCreated(portfolioId, owner, name, updateTimestamp)
     case PortfolioDeleted(portfolioId) => onPortfolioDeleted(portfolioId)
@@ -446,6 +469,7 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     case StockAdded(stock, category, stockHolding, cashHolding, updateTimestamp) => onStockAdded(stock, category, stockHolding, cashHolding, updateTimestamp)
     case TradeHistoryAdded(historySet, updateTimestamp) => onTradeHistoryAdded(historySet, updateTimestamp)
     case TradeHistoryDeleted(tradeHistory, cashFlowHistory, updateTimestamp) => onTradeHistoryDeleted(tradeHistory, cashFlowHistory, updateTimestamp)
+    case AllTradeHistoriesDeleted(stock, updateTimestamp) => onAllTradeHistoryDeleted(stock, updateTimestamp)
     case TradeHistoryUpdated(lastHistorySet, newHistorySet, updateTimestamp) => onTradeHistoryUpdated(lastHistorySet, newHistorySet, updateTimestamp)
     case StockDeleted(stock, category, stockHolding, updateTimestamp) => onStockDeleted(stock, category, stockHolding, updateTimestamp)
     case StockCategoryUpdated(stock, lastCategory, newCategory, updateTimestamp) => onStockCategoryUpdated(stock, lastCategory, newCategory, updateTimestamp)
@@ -470,6 +494,15 @@ case class PortfolioEntity(state: Option[PortfolioState]) {
     copy(state.map(_.addTradeHistories(historySet.tradeHistory.stock, historySet.tradeHistory).addCashHistories(historySet.cashFlowHistory.country, historySet.cashFlowHistory).updateTimestamp(updateTimestamp)))
   private def onTradeHistoryDeleted(tradeHistory: TradeHistory, cashFlowHistory: CashFlowHistory, updateTimestamp: Long): PortfolioEntity =
     copy(state.map(_.removeTradeHistories(tradeHistory.stock, tradeHistory).removeCashHistories(cashFlowHistory.country, cashFlowHistory).updateTimestamp(updateTimestamp)))
+  private def onAllTradeHistoryDeleted(stock: Stock, updateTimestamp: Long): PortfolioEntity =
+    copy(for {
+      s <- state
+      holding <- s.getHoldingStock(stock)
+    }yield{
+      s.removeCashHistories(stock.country, holding.tradeHistories.map(h=>CashFlowHistory(h)): _*)
+        .removeAllTradeHistories(stock)
+        .updateTimestamp(updateTimestamp)
+    })
   private def onTradeHistoryUpdated(lastHistorySet: HistorySet, newHistorySet: HistorySet, updateTimestamp: Long): PortfolioEntity =
     copy(state.map(_.updateTradeHistory(lastHistorySet.tradeHistory.stock, lastHistorySet.tradeHistory, newHistorySet.tradeHistory)
       .updateCashHistory(lastHistorySet.cashFlowHistory.country, lastHistorySet.cashFlowHistory, newHistorySet.cashFlowHistory).updateTimestamp(updateTimestamp)))
