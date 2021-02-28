@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.fasterxml.jackson.databind.ser.std.StdSerializer
 import com.ktmet.asset.common.api.MapFormat
 import play.api.libs.json.{Format, JsError, JsObject, JsPath, JsResult, JsString, JsSuccess, JsValue, Json, Reads, Writes}
+import cats.syntax.option._
 
 import scala.annotation.tailrec
 import scala.collection.mutable.ListBuffer
@@ -37,14 +38,35 @@ case class GoalAssetRatio(stockRatios: Map[Category, List[StockRatio]]
   def containCategory(category: Category): Boolean = stockRatios.contains(category)
   def addCategory(category: Category): GoalAssetRatio =
     copy(stockRatios = stockRatios + (category -> List.empty))
-  def addStock(category: Category, stock: Stock): Option[GoalAssetRatio] =
-    stockRatios.get(category) match {
-      case Some(ratios) => ratios.find(_.stock == stock) match {
-        case Some(_) => Some(this)
-        case None => Some(copy(stockRatios = stockRatios + (category -> (StockRatio(stock, 0) :: ratios))))
-      }
-      case None => None
+  def addStock(category: Category, stock: Stock): Option[GoalAssetRatio] = {
+    stockRatios.contains(category) match {
+      case true =>
+        val sRatios = stockRatios.map{ case (cate, ratios) =>
+          ratios.find(_.stock == stock) match {
+            case Some(_) if category.value != cate.value =>
+              (cate, ratios.filterNot(_.stock == stock))
+            case None if category.value == cate.value =>
+              (cate, StockRatio(stock, 0) :: ratios)
+            case _ => (cate, ratios)
+          }
+        }
+        Some(copy(stockRatios = sRatios))
+      case false => None
     }
+
+
+
+//    stockRatios.find{ case (_, ratios) =>
+//      ratios.find(_.stock == stock).fold(false)(_=>true)} match {
+//      case Some(_) => Some(this)
+//      case None => stockRatios.get(category) match {
+//        case Some(ratios) => Some(copy(stockRatios = stockRatios + (category -> (StockRatio(stock, 0) :: ratios))))
+//        case None => None
+//      }
+//    }
+
+  }
+
   def getCategoryRatios: Map[Category, Int] = stockRatios.map{ case (c, l) => c -> l.map(_.ratio).fold(0)(_+_)} ++
     cashRatios.map{ case (c, l) => c -> l.map(_.ratio).fold(0)(_+_)}
   def isValid = if(getCategoryRatios.values.fold(0)(_+_) == 100) true else false
