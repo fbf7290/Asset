@@ -484,7 +484,7 @@ case class CashHolding(country: Country, balance: BigDecimal, cashFlowHistories:
     (history match {
       case _: WithdrawHistory | _: BoughtStockCashHistory => balance - history.balance
       case _: DepositHistory | _: SoldStockCashHistory => balance + history.balance
-        
+      case _: DepositHistory | _: SoldStockCashHistory => balance + history.balance
     }, add(history, histories, ListBuffer.empty))
   }
   private def removeHistory(balance: BigDecimal, histories: List[CashFlowHistory]
